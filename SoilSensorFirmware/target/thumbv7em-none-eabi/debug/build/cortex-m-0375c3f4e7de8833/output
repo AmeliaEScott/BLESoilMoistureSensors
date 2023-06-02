@@ -1,5 +1,0 @@
-cargo:rustc-link-lib=static=cortex-m
-cargo:rustc-link-search=/Users/Timmy/Code/SoilMoistureSensors/SoilSensorFirmware/target/thumbv7em-none-eabi/debug/build/cortex-m-0375c3f4e7de8833/out
-cargo:rustc-cfg=cortex_m
-cargo:rustc-cfg=armv7m
-cargo:rustc-cfg=armv7em
