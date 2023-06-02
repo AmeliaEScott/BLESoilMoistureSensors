@@ -1,0 +1,3 @@
+cargo:rustc-link-search=/Users/Timmy/Code/SoilMoistureSensors/SoilSensorFirmware/target/thumbv7em-none-eabi/debug/build/nrf52810-pac-8d291fc9b5b83abd/out
+cargo:rerun-if-changed=device.x
+cargo:rerun-if-changed=build.rs

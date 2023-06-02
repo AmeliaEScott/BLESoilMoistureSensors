@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "nrf51822")(type "KiCad")(uri "${KIPRJMOD}/nrf51822.kicad_sym")(options "")(descr ""))
+  (lib (name "nrf51x22_qfax_dcdc-cache")(type "KiCad")(uri "${KIPRJMOD}/nrf51x22_qfax_dcdc-cache.kicad_sym")(options "")(descr ""))
+)

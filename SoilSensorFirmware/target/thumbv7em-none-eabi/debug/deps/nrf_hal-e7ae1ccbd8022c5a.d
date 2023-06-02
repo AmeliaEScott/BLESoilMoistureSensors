@@ -1,0 +1,14 @@
+/Users/Timmy/Code/SoilMoistureSensors/SoilSensorFirmware/target/thumbv7em-none-eabi/debug/deps/nrf_hal-e7ae1ccbd8022c5a.rmeta: /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/lib.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/clocks.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/gpio.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/rtc.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/pwm.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/spim.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/timer.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/twim.rs
+
+/Users/Timmy/Code/SoilMoistureSensors/SoilSensorFirmware/target/thumbv7em-none-eabi/debug/deps/libnrf_hal-e7ae1ccbd8022c5a.rlib: /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/lib.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/clocks.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/gpio.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/rtc.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/pwm.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/spim.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/timer.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/twim.rs
+
+/Users/Timmy/Code/SoilMoistureSensors/SoilSensorFirmware/target/thumbv7em-none-eabi/debug/deps/nrf_hal-e7ae1ccbd8022c5a.d: /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/lib.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/clocks.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/gpio.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/rtc.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/pwm.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/spim.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/timer.rs /Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/twim.rs
+
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/lib.rs:
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/clocks.rs:
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/gpio.rs:
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/rtc.rs:
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/pwm.rs:
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/spim.rs:
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/timer.rs:
+/Users/Timmy/.cargo/git/checkouts/nrf-hal-de5ab770bdb7fafa/ba0acc1/src/twim.rs:

@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "nrf51x22_qfax_dcdc-rescue")(type "Legacy")(uri "${KIPRJMOD}/nrf51x22_qfax_dcdc-rescue.lib")(options "")(descr ""))
+  (lib (name "nrf51822")(type "Legacy")(uri "${KIPRJMOD}/nrf51822.lib")(options "")(descr ""))
+)
