@@ -1,2 +1,18 @@
 [build]
 target = "thumbv7em-none-eabi"
+
+[target.thumbv7em-none-eabi]
+runner = "probe-run --chip nRF52810_xxAA"
+rustflags = [
+    "-C", "linker=flip-link",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-Tdefmt.x",
+    # This is needed if your flash or ram addresses are not aligned to 0x10000 in memory.x
+    # See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
+    "-C", "link-arg=--nmagic",
+]
+
+[alias]
+rb = "run --bin"
+rrb = "run --release --bin"
+bbr = "build --release --bin"
