@@ -28,11 +28,10 @@ pub fn setup_bluetooth() -> Result<(&'static mut Softdevice, Server), gatt_serve
 {
     let config = nrf_softdevice::Config {
         clock: Some(raw::nrf_clock_lf_cfg_t {
-            // TODO: Why no crystal??? (See setup.rs for more!)
-            source: raw::NRF_CLOCK_LF_SRC_RC as u8,
-            rc_ctiv: 16,
-            rc_temp_ctiv: 2,
-            accuracy: raw::NRF_CLOCK_LF_ACCURACY_500_PPM as u8,
+            source: raw::NRF_CLOCK_LF_SRC_XTAL as u8,
+            rc_ctiv: 0,
+            rc_temp_ctiv: 0,
+            accuracy: raw::NRF_CLOCK_LF_ACCURACY_20_PPM as u8,
         }),
         conn_gap: Some(raw::ble_gap_conn_cfg_t {
             conn_count: 1,
@@ -76,17 +75,12 @@ pub async fn run_bluetooth(sd: &'static Softdevice, server: &mut Server) -> !
         0x03, 0x03, 0x09, 0x18,
     ];
 
-    debug!("Gonna loop");
-
     loop {
-        debug!("Can I config?");
         let config = peripheral::Config::default();
-        debug!("I configed");
         let adv = peripheral::ConnectableAdvertisement::ScannableUndirected { adv_data, scan_data };
-        debug!("I adv");
         let conn = unwrap!(peripheral::advertise_connectable(sd, adv, &config).await);
 
-        info!("advertising done!");
+        debug!("Advertising done!");
 
         // Run the GATT server on the connection. This returns when the connection gets disconnected.
         //

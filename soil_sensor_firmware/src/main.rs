@@ -76,7 +76,7 @@ mod app {
     #[task(binds = RTC1, local = [clock, count])]
     fn timer_callback(cx: timer_callback::Context) {
         let clock : &mut hal::rtc::Rtc<pac::RTC1> = cx.local.clock;
-        clock.reset_event(hal::rtc::RtcInterrupt::Compare0);
+        clock.reset_event(hal::rtc::RtcInterrupt::Compare1);
         clock.clear_counter();
 
         let count : &mut u32 = cx.local.count;
