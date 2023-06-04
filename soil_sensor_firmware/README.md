@@ -8,6 +8,7 @@
 cargo install probe-run
 cargo install flip-link
 cargo install cargo-binutils
+cargo install probe-rs-cli
 ```
 
 ### Build:

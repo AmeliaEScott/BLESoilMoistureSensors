@@ -23,7 +23,7 @@ pub enum SetupError {
 }
 
 ///
-/// First-time configuration of the Real-Time Counter RTC0
+/// First-time configuration of the Real-Time Counter RTC1
 ///
 /// Does all of the following:
 ///  - Start Low-Frequency Clock
@@ -32,14 +32,16 @@ pub enum SetupError {
 ///  - Enable Compare0 event
 ///  - Start the counter
 ///
-pub fn setup_timer(core: &mut Peripherals) -> Result<rtc::Rtc<hal::pac::RTC0>, ClockSetupError>
+pub fn setup_timer(core: &mut Peripherals) -> Result<rtc::Rtc<hal::pac::RTC1>, ClockSetupError>
 {
     let p = hal::pac::Peripherals::take()
         .ok_or(ClockSetupError::PeripheralAccess)?;
-    let clocks = hal::clocks::Clocks::new(p.CLOCK);
-    clocks.start_lfclk();
+    // TODO: Why is this not working with LfOscConfiguration::ExternalNoBypass?
+    let clocks = hal::clocks::Clocks::new(p.CLOCK)
+        .set_lfclk_src_external(hal::clocks::LfOscConfiguration::NoExternalNoBypass)
+        .start_lfclk();
 
-    let mut rtc = rtc::Rtc::new(p.RTC0, config::TIMER_PRESCALER)?;
+    let mut rtc = rtc::Rtc::new(p.RTC1, config::TIMER_PRESCALER)?;
     rtc.set_compare(rtc::RtcCompareReg::Compare0, config::TIMER_COMPARE)?;
     rtc.enable_event(rtc::RtcInterrupt::Compare0);
     rtc.enable_interrupt(rtc::RtcInterrupt::Compare0, Some(&mut core.NVIC));

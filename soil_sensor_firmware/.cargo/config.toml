@@ -4,9 +4,14 @@ target = "thumbv7em-none-eabi"
 [target.thumbv7em-none-eabi]
 runner = "probe-run --chip nRF52810_xxAA"
 rustflags = [
-    "-C", "linker=flip-link",
+    # No reason to use flip-link with NRF SoftDevice. Stack overflow protection is done by overflowing into
+    # the lower limit of RAM. But the SoftDevice takes up the lower limit of RAM. So with flip-link, a stack
+    # overflow would just mangle the SoftDevice RAM.
+    # Also for reasons I don't fully understand, it just won't link correctly with flip-link.
+    # "-C", "linker=flip-link",
     "-C", "link-arg=-Tlink.x",
     "-C", "link-arg=-Tdefmt.x",
+    "-C", "link-arg=--error-limit=0",
     # This is needed if your flash or ram addresses are not aligned to 0x10000 in memory.x
     # See https://github.com/rust-embedded/cortex-m-quickstart/pull/95
     "-C", "link-arg=--nmagic",
