@@ -57,9 +57,14 @@ impl Peripherals {
         ppi0.enable();
 
         let ppi1 = &mut self.ppi.ppi1;
+        ppi1.set_event_endpoint(&self.rtc.events_compare[3]);
         ppi1.set_task_endpoint(&self.timer.tasks_capture[3]);
-        ppi1.set_event_endpoint(&self.rtc.events_compare[1]);
         ppi1.enable();
+
+        let ppi2 = &mut self.ppi.ppi2;
+        ppi2.set_event_endpoint(&self.rtc.events_compare[2]);
+        ppi2.set_task_endpoint(&self.timer.tasks_clear);
+        ppi2.enable();
     }
 }
 
