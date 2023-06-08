@@ -3,7 +3,6 @@
 #![feature(type_alias_impl_trait)]
 
 mod setup;
-mod config;
 mod bluetooth;
 
 use rtic::app;
@@ -23,6 +22,7 @@ use defmt::{debug, info, warn, error, unwrap};
 #[app(device = pac, peripherals = false, dispatchers = [SWI3])]
 mod app {
     use core::fmt::Error;
+    use nrf52810_hal::prelude::OutputPin;
     use super::*;
 
     type SDRef = &'static mut Softdevice;
@@ -35,9 +35,8 @@ mod app {
 
     #[local]
     struct Local {
-        clock: hal::rtc::Rtc<pac::RTC1>,
         count: u32,
-        timer1: pac::TIMER1,
+        peripherals: setup::Peripherals,
         //softdevice: &'static mut Softdevice,
         //gatt_server: bluetooth::Server
     }
@@ -47,10 +46,8 @@ mod app {
         defmt::debug!("Init! Look, I'm initializing!!! Isn't that so cool???");
 
         let mut p = hal::pac::Peripherals::take().unwrap();
-        let mut ppi_channels = hal::ppi::Parts::new(p.PPI);
-
-        let clock = setup::setup_timer(&mut ppi_channels, p.RTC1, &p.TIMER1, p.CLOCK, &mut cx.core).unwrap();
-        let _ = setup::setup_probe_timer(p.P0, p.GPIOTE, &mut p.TIMER1, &mut ppi_channels, &mut cx.core).unwrap();
+        let mut peripherals = setup::Peripherals::new(p, &mut cx.core).unwrap();
+        peripherals.probe_enable.set_high();
 
         ble_service::spawn().unwrap();
 
@@ -60,9 +57,8 @@ mod app {
                 //p: p
             },
             Local {
-                clock: clock,
                 count: 0,
-                timer1: p.TIMER1
+                peripherals
                 //softdevice,
                 //gatt_server: server
             }
@@ -77,20 +73,21 @@ mod app {
         }
     }
 
-    #[task(binds = RTC1, local = [clock, count, timer1])]
+    #[task(binds = RTC1, local = [count, peripherals])]
     fn timer_callback(cx: timer_callback::Context) {
-        let clock : &mut hal::rtc::Rtc<pac::RTC1> = cx.local.clock;
-        clock.reset_event(hal::rtc::RtcInterrupt::Compare1);
-        clock.clear_counter();
+        let clock : &mut pac::RTC1 = &mut cx.local.peripherals.rtc;
+        //clock.reset_event(hal::rtc::RtcInterrupt::Compare1);
+        clock.events_compare[3].write(|w| w.events_compare().clear_bit());
+        clock.tasks_clear.write(|w| w.tasks_clear().set_bit());
 
         let count : &mut u32 = cx.local.count;
         *count += 1;
-        defmt::info!("Current count is {}", count);
+        info!("Current count is {}", count);
 
-        let timer1 : &mut pac::TIMER1 = cx.local.timer1;
+        let timer1 : &mut pac::TIMER1 = &mut cx.local.peripherals.timer;
         let probe : u32 = timer1.cc[3].read().cc().bits();
         timer1.tasks_clear.write(|w| w.tasks_clear().set_bit());
-        defmt::info!("Probe timer count is {}kHz", probe / 1000);
+        info!("Probe timer count is {}Hz", probe);
     }
 
     #[task(priority = 1)]
