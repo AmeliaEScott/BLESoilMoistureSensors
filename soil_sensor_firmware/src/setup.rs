@@ -3,8 +3,9 @@ use thiserror_no_std::Error;
 
 use nrf52810_hal::{rtc, gpio, gpiote, ppi, ppi::Ppi, pac, clocks};
 use gpio::{Input, Output, PullDown, PushPull};
+use nrf52810_hal::pac::saadc::{resolution, oversample, ch::{pselp, config as adc_config}};
 use nrf52810_hal::prelude::ConfigurablePpi;
-use nrf52810_hal::pac::timer1::{bitmode::BITMODE_A, mode::MODE_A};
+use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 
 #[derive(Error, Debug)]
 pub enum SetupError {
@@ -20,26 +21,29 @@ pub struct Peripherals {
     pub gpiote: gpiote::Gpiote,
     pub timer: pac::TIMER1,
     pub adc: pac::SAADC,
+    pub adc_buffer : &'static mut [i16],
     pub ppi: ppi::Parts
 }
 
 impl Peripherals {
-    pub fn new(mut p: pac::Peripherals, core: &mut cortex_m::Peripherals) -> Result<Self, SetupError>
+    pub fn new(mut p: pac::Peripherals, core: &mut cortex_m::Peripherals, dma_buffer: &'static mut [i16]) -> Result<Self, SetupError>
     {
         setup_interrupt_priority(core);
+        p.POWER.dcdcen.write(|w| w.dcdcen().set_bit());
 
         let rtc = setup_rtc1(p.RTC1, core)?;
         let clocks = setup_clocks(p.CLOCK);
         let (probe_enable, probe_signal) = setup_gpio(p.P0);
         let gpiote = setup_gpiote(&probe_signal, p.GPIOTE);
         setup_counter(&mut p.TIMER1);
-        //setup_adc(&mut p.SAADC);
+        setup_adc(&mut p.SAADC, dma_buffer);
         let ppi = ppi::Parts::new(p.PPI);
 
         let mut peripherals = Self {
             rtc, clocks, probe_enable, probe_signal, gpiote,
             timer: p.TIMER1,
             adc: p.SAADC,
+            adc_buffer: dma_buffer,
             ppi
         };
 
@@ -51,9 +55,10 @@ impl Peripherals {
     /// TODO
     pub fn setup_ppi(&mut self)
     {
+        // Connect probe input GPIO to counter
         let ppi0 = &mut self.ppi.ppi0;
-        ppi0.set_task_endpoint(&self.timer.tasks_count);
         ppi0.set_event_endpoint(self.gpiote.channel0().event());
+        ppi0.set_task_endpoint(&self.timer.tasks_count);
         ppi0.enable();
 
         let ppi1 = &mut self.ppi.ppi1;
@@ -169,13 +174,33 @@ fn setup_counter(timer1: &mut pac::TIMER1)
     // Setup counter to count pulses from probe timer
     // Use TIMER1 because Softdevice uses TIMER0
     // The higher-level Timer HAL is incomplete, so we must get nasty with the PAC
-    timer1.bitmode.write(|w| w.bitmode().variant(BITMODE_A::_32BIT));
-    timer1.mode.write(|w| w.mode().variant(MODE_A::LOW_POWER_COUNTER));
+    timer1.bitmode.write(|w| w.bitmode().variant(timer_bitmode::BITMODE_A::_32BIT));
+    timer1.mode.write(|w| w.mode().variant(timer_mode::MODE_A::LOW_POWER_COUNTER));
     timer1.tasks_start.write(|w| w.tasks_start().set_bit());
 }
 
-/// TODO
-fn setup_adc(adc: &mut pac::SAADC)
+/// Sets up a single ADC channel for measuring the voltage on the main capacitor.
+fn setup_adc(adc: &mut pac::SAADC, dma_buffer: &mut [i16])
 {
-    unimplemented!()
+    adc.resolution.write(|w| w.val().variant(resolution::VAL_A::_14BIT));
+    adc.oversample.write(|w| w.oversample().variant(oversample::OVERSAMPLE_A::OVER256X));
+
+    // VCap is P0_02 / AIN0
+    adc.ch[0].pselp.write(|w|  w.pselp().variant(pselp::PSELP_A::ANALOG_INPUT0));
+    adc.ch[0].config.write(|w| {
+        w
+           .mode().variant(adc_config::MODE_A::SE)
+           .gain().variant(adc_config::GAIN_A::GAIN1_4)
+           .refsel().variant(adc_config::REFSEL_A::VDD1_4)
+           .tacq().variant(adc_config::TACQ_A::_40US)
+           .burst().set_bit()
+    });
+
+    adc.result.ptr.write(|w| w.ptr().variant(dma_buffer.as_ptr() as u32));
+    adc.result.maxcnt.write(|w| w.maxcnt().variant(dma_buffer.len() as u16));
+
+    adc.inten.write(|w| {
+        w.end().set_bit()
+    });
+    adc.enable.write(|w| w.enable().set_bit() );
 }

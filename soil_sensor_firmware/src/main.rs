@@ -17,7 +17,13 @@ use hal::pac;
 use hal::prelude::ConfigurablePpi;
 
 use nrf_softdevice::Softdevice;
-use defmt::{debug, info, warn, error, unwrap};
+use defmt::{debug, info, warn, error, unwrap, Format};
+
+#[derive(Debug, Format)]
+pub enum Event {
+    RTC,
+    ADC
+}
 
 #[app(device = pac, peripherals = false, dispatchers = [SWI3])]
 mod app {
@@ -29,43 +35,32 @@ mod app {
 
     #[shared]
     struct Shared {
-        a: u16,
-        //p: hal::pac::Peripherals
+        peripherals: setup::Peripherals,
     }
 
     #[local]
-    struct Local {
-        count: u32,
-        peripherals: setup::Peripherals,
-        //softdevice: &'static mut Softdevice,
-        //gatt_server: bluetooth::Server
-    }
+    struct Local {}
 
-    #[init]
+    #[init(local = [dma_buffer : [i16; 1] = [0; 1]])]
     fn init(mut cx: init::Context) -> (Shared, Local) {
-        defmt::debug!("Init! Look, I'm initializing!!! Isn't that so cool???");
-
-        let mut p = hal::pac::Peripherals::take().unwrap();
-        let mut peripherals = setup::Peripherals::new(p, &mut cx.core).unwrap();
+        debug!("Init! Look, I'm initializing!!! Isn't that so cool???");
+        let mut p = pac::Peripherals::take().unwrap();
+        let dma_buffer : &'static mut [i16] = cx.local.dma_buffer.as_mut_slice();
+        let mut peripherals = setup::Peripherals::new(
+            p, &mut cx.core, dma_buffer).unwrap();
         peripherals.probe_enable.set_high();
 
         ble_service::spawn().unwrap();
 
         (
             Shared {
-                a: 1 ,
-                //p: p
-            },
-            Local {
-                count: 0,
                 peripherals
-                //softdevice,
-                //gatt_server: server
-            }
+            },
+            Local {}
         )
     }
 
-    #[idle(local = [])]
+    #[idle]
     fn idle(cx: idle::Context) -> ! {
         defmt::debug!("Now I am idling");
         loop {
@@ -73,21 +68,33 @@ mod app {
         }
     }
 
-    #[task(binds = RTC1, local = [count, peripherals])]
-    fn timer_callback(cx: timer_callback::Context) {
-        let clock : &mut pac::RTC1 = &mut cx.local.peripherals.rtc;
-        //clock.reset_event(hal::rtc::RtcInterrupt::Compare1);
-        clock.events_compare[3].write(|w| w.events_compare().clear_bit());
-        clock.tasks_clear.write(|w| w.tasks_clear().set_bit());
+    #[task(binds = RTC1, shared = [peripherals])]
+    fn timer_callback(mut cx: timer_callback::Context)
+    {
+        debug!("Timer interrupt!");
+        cx.shared.peripherals.lock(|p : &mut setup::Peripherals|{
+            p.rtc.events_compare[3].reset();
+            p.rtc.tasks_clear.write(|w| w.tasks_clear().set_bit());
 
-        let count : &mut u32 = cx.local.count;
-        *count += 1;
-        info!("Current count is {}", count);
+            let probe : u32 = p.timer.cc[3].read().cc().bits();
+            p.timer.tasks_clear.write(|w| w.tasks_clear().set_bit());
+            info!("Probe timer count is {}Hz", probe);
 
-        let timer1 : &mut pac::TIMER1 = &mut cx.local.peripherals.timer;
-        let probe : u32 = timer1.cc[3].read().cc().bits();
-        timer1.tasks_clear.write(|w| w.tasks_clear().set_bit());
-        info!("Probe timer count is {}Hz", probe);
+            p.adc.tasks_start.write(|w| w.tasks_start().set_bit());
+            p.adc.tasks_sample.write(|w| w.tasks_sample().set_bit());
+        });
+    }
+
+    #[task(binds = SAADC, shared = [peripherals])]
+    fn adc_callback(mut cx: adc_callback::Context)
+    {
+        debug!("ADC interrupt!");
+        cx.shared.peripherals.lock(|p : &mut setup::Peripherals|{
+            p.adc.events_end.reset();
+            let adc_measurement = p.adc_buffer[0];
+            let adc_measurement_mv = (adc_measurement as i32 * 3300i32) / 16384i32;
+            info!("ADC Measurements: {}mV", adc_measurement_mv);
+        });
     }
 
     #[task(priority = 1)]
