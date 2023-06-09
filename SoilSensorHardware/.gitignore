@@ -7,6 +7,8 @@
 *.bck
 *.kicad_pcb-bak
 
+nrf51x22_qfax_dcdc-backups/
+
 # Netlist files (exported from Eeschema)
 *.net
 
