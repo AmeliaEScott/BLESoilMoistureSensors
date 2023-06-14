@@ -93,7 +93,8 @@ fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals)
     rtc1.enable_event(rtc::RtcInterrupt::Compare1);
     rtc1.set_compare(rtc::RtcCompareReg::Compare2, 4)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare2);
-    rtc1.set_compare(rtc::RtcCompareReg::Compare3, 4 + clocks::LFCLK_FREQ / (prescaler + 1))?;
+    // rtc1.set_compare(rtc::RtcCompareReg::Compare3, 4 + clocks::LFCLK_FREQ / (prescaler + 1))?;
+    rtc1.set_compare(rtc::RtcCompareReg::Compare3, (clocks::LFCLK_FREQ / (prescaler + 1)) * 15);
     rtc1.enable_event(rtc::RtcInterrupt::Compare3);
     rtc1.enable_interrupt(rtc::RtcInterrupt::Compare3, Some(&mut core.NVIC));
     rtc1.enable_counter();
