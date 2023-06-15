@@ -124,9 +124,9 @@ mod app {
 
     #[task(priority = 1, local = [measurements_r])]
     async fn ble_service(mut cx: ble_service::Context) {
-        let receiver: &mut Receiver<'static, Measurement, 1> = &mut cx.local.measurements_r;
-
         let bt = bluetooth::SensorBluetooth::new().unwrap();
+
+        let receiver: &mut Receiver<'static, Measurement, 1> = &mut cx.local.measurements_r;
         softdevice_runner::spawn().unwrap();
 
         // This async function will loop forever, waiting for new Measurements and sending
