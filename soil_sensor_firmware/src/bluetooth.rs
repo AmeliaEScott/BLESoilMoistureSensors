@@ -3,13 +3,12 @@ use nrf_softdevice::{ble, raw, Softdevice};
 use core::mem;
 use defmt::debug;
 use nrf_softdevice::ble::gatt_server::NotifyValueError;
-use crate::measurement;
-use measurement::Measurement;
+use soil_sensor_common::{Measurement, Serialized};
 
 #[nrf_softdevice::gatt_service(uuid = "866a5627-a761-47cc-9976-7457450e8257")]
 pub struct MoistureSensorService {
     #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    measurement: measurement::Serialized
+    measurement: Serialized
 }
 
 #[nrf_softdevice::gatt_server]

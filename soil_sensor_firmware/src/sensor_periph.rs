@@ -5,10 +5,11 @@ use nrf52810_hal::{rtc, gpio, gpiote, ppi, ppi::Ppi, pac, clocks};
 use gpio::{Input, Output, PullDown, PushPull};
 use nrf52810_hal::pac::rtc0::tasks_trigovrflw::TASKS_TRIGOVRFLW_AW;
 use nrf52810_hal::pac::saadc::{resolution, oversample, ch::{pselp, config as adc_config}};
-use nrf52810_hal::prelude::ConfigurablePpi;
+use nrf52810_hal::prelude::{ConfigurablePpi, OutputPin};
 use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 
-use crate::measurement::Measurement;
+use soil_sensor_common::Measurement;
+use void::ResultVoidExt;
 
 /// Statically parse the string from environment variable "SENSOR_ID" into a u16.
 /// Compilation will fail if SENSOR_ID is not a valid 4-digit hexadecimal number
@@ -41,17 +42,18 @@ pub enum SetupError {
 }
 
 pub struct Peripherals {
-    pub rtc: pac::RTC1,
-    pub clocks: clocks::Clocks<clocks::ExternalOscillator, clocks::ExternalOscillator, clocks::LfOscStarted>,
-    pub probe_enable: gpio::Pin<Output<PushPull>>,
-    pub probe_signal: gpio::Pin<Input<PullDown>>,
-    pub gpiote: gpiote::Gpiote,
-    pub counter: pac::TIMER1,
-    pub adc: pac::SAADC,
-    pub adc_buffer : &'static mut [i16],
-    pub ppi: ppi::Parts,
-    pub temp: pac::TEMP,
-    pub temp_buffer: i32
+    rtc: pac::RTC1,
+    probe_enable: gpio::Pin<Output<PushPull>>,
+    #[allow(dead_code)]
+    probe_signal: gpio::Pin<Input<PullDown>>,
+    gpiote: gpiote::Gpiote,
+    counter: pac::TIMER1,
+    adc: pac::SAADC,
+    adc_buffer : &'static mut [i16],
+    ppi: ppi::Parts,
+    temp: pac::TEMP,
+    temp_buffer: i32,
+    sequence: u16,
 }
 
 impl Peripherals {
@@ -61,7 +63,7 @@ impl Peripherals {
         p.POWER.dcdcen.write(|w| w.dcdcen().set_bit());
 
         let rtc = setup_rtc1(p.RTC1, core)?;
-        let clocks = setup_clocks(p.CLOCK);
+        setup_clocks(p.CLOCK);
         let (probe_enable, probe_signal) = setup_gpio(p.P0);
         let gpiote = setup_gpiote(&probe_signal, p.GPIOTE);
         setup_counter(&mut p.TIMER1);
@@ -69,13 +71,14 @@ impl Peripherals {
         let ppi = ppi::Parts::new(p.PPI);
 
         let mut peripherals = Self {
-            rtc, clocks, probe_enable, probe_signal, gpiote,
+            rtc, probe_enable, probe_signal, gpiote,
             counter: p.TIMER1,
             adc: p.SAADC,
             adc_buffer: dma_buffer,
             ppi,
             temp: p.TEMP,
-            temp_buffer: i32::MIN
+            temp_buffer: i32::MIN,
+            sequence: u16::MAX,
         };
 
         peripherals.setup_ppi();
@@ -87,7 +90,7 @@ impl Peripherals {
     ///  - Use counter TIMER1 to count pulses from moisture probe oscillator output
     ///  - On RTC1 Overflow, start ADC and take a sample
     ///  - Between RTC1.Compare0 and RTC1.Compare1 (Normally exactly 1s), count the pulses from the probe
-    pub fn setup_ppi(&mut self)
+    fn setup_ppi(&mut self)
     {
         // TODO: Delete this!
         //  Use Compare3 to trigger early Overflow
@@ -149,17 +152,46 @@ impl Peripherals {
         self.adc_buffer[0]
     }
 
-    pub fn get_measurement(&self) -> Measurement {
+    pub fn reset_adc_event(&self) {
+        self.adc.events_end.reset();
+    }
+
+    pub fn reset_rtc_event(&self) {
+        self.rtc.events_compare[1].reset()
+    }
+
+    // TODO: Documentation
+    pub fn read_temp(&mut self) -> Result<(), ()> {
+        if self.temp.events_datardy.read().events_datardy().bit() {
+            self.temp.events_datardy.reset();
+            self.temp_buffer = self.temp.temp.read().temp().bits() as i32;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn get_measurement(&mut self) -> Measurement {
+        (self.sequence, _) = self.sequence.overflowing_add(1);
         Measurement {
             id: SENSOR_ID,
             capacitor_voltage: self.adc_buffer[0],
             moisture_frequency: self.counter.cc[0].read().cc().bits(),
-            temperature: self.temp_buffer
+            temperature: self.temp_buffer,
+            sequence: self.sequence
         }
     }
 
     pub fn trigger_rtc_overflow(&self) {
         self.rtc.tasks_trigovrflw.write(|w| w.tasks_trigovrflw().variant(TASKS_TRIGOVRFLW_AW::TRIGGER));
+    }
+
+    pub fn enable_probe(&mut self) {
+        self.probe_enable.set_high().void_unwrap()
+    }
+
+    pub fn disable_probe(&mut self) {
+        self.probe_enable.set_low().void_unwrap()
     }
 }
 

@@ -759,6 +759,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
+name = "soil_sensor_ble_bridge"
+version = "0.1.0"
+
+[[package]]
 name = "soil_sensor_common"
 version = "0.1.0"
 dependencies = [
@@ -770,7 +774,6 @@ name = "soil_sensor_firmware"
 version = "0.1.0"
 dependencies = [
  "cortex-m",
- "critical-section",
  "defmt",
  "defmt-rtt",
  "futures",

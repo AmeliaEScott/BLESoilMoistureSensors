@@ -3,9 +3,8 @@
 #![feature(type_alias_impl_trait)]
 #![feature(try_blocks)]
 
-mod setup;
+mod sensor_periph;
 mod bluetooth;
-mod measurement;
 
 use rtic::app;
 
@@ -19,12 +18,10 @@ use hal::pac;
 use nrf_softdevice::Softdevice;
 use defmt::{trace, debug, info, warn, intern};
 
-use measurement::Measurement;
+use soil_sensor_common::Measurement;
 
 use futures::future::FutureExt;
 use futures::select_biased;
-
-use void::ResultVoidExt;
 
 // TODO: Find the right value for this
 //  Also maybe find a better place to put it?
@@ -32,14 +29,13 @@ pub const ADC_MEASUREMENT_THRESHOLD: i16 = 0;
 
 #[app(device = pac, peripherals = false, dispatchers = [SWI3])]
 mod app {
-    use nrf52810_hal::prelude::OutputPin;
     use nrf_softdevice::ble;
     use rtic_sync::{channel::*, make_channel};
     use super::*;
 
     #[shared]
     struct Shared {
-        peripherals: setup::Peripherals,
+        peripherals: sensor_periph::Peripherals,
     }
 
     #[local]
@@ -50,16 +46,19 @@ mod app {
 
     #[init(local = [dma_buffer : [i16; 1] = [0; 1]])]
     fn init(mut cx: init::Context) -> (Shared, Local) {
-        info!("Initialized with SENSOR_ID=0x{=u16:#04X}", setup::SENSOR_ID);
+        info!("Initialized with SENSOR_ID={=u16:#04X}", sensor_periph::SENSOR_ID);
         let p = pac::Peripherals::take().unwrap();
         let dma_buffer : &'static mut [i16] = cx.local.dma_buffer.as_mut_slice();
-        let peripherals = setup::Peripherals::new(
+        let peripherals = sensor_periph::Peripherals::new(
             p, &mut cx.core, dma_buffer).unwrap();
 
         let (s, r) = make_channel!(Measurement, 1);
 
         ble_service::spawn().unwrap();
 
+        // Immediately trigger an overflow, so that a measurement will immediately be taken
+        // Otherwise, would wait a full overflow period (~1 hour) to take first measurement
+        // after restart.
         peripherals.trigger_rtc_overflow();
 
         (
@@ -78,17 +77,16 @@ mod app {
     {
         trace!("[timer_callback] Timer interrupt");
 
-        let meas: Measurement = cx.shared.peripherals.lock(|p: &mut setup::Peripherals| {
+        let meas: Measurement = cx.shared.peripherals.lock(|p: &mut sensor_periph::Peripherals| {
             // Need to reset the event, otherwise this interrupt gets triggered repeatedly
-            p.rtc.events_compare[1].reset();
+            p.reset_rtc_event();
             // TODO: Do this with PPI
-            let _ = p.probe_enable.set_low().void_unwrap();
+            let _ = p.disable_probe();
             p.get_measurement()
         });
 
         let should_send = meas.capacitor_voltage > ADC_MEASUREMENT_THRESHOLD;
-        debug!("[timer_callback] Measurement: [cap_v: {}, probe_freq: {}, temp: {}], send? {}",
-                meas.capacitor_voltage, meas.moisture_frequency, meas.temperature, should_send);
+        debug!("[timer_callback] Send? {}, Measurement: {}", should_send, meas);
 
         if  should_send {
             let sender: &mut Sender<'static, Measurement, 1> = cx.local.measurements_s;
@@ -100,22 +98,17 @@ mod app {
     fn adc_callback(mut cx: adc_callback::Context)
     {
         trace!("[adc_callback] ADC Interrupt");
-        cx.shared.peripherals.lock(|p : &mut setup::Peripherals|{
-            p.adc.events_end.reset();
-            if p.temp.events_datardy.read().events_datardy().bit() {
-                p.temp.events_datardy.reset();
-                p.temp_buffer = p.temp.temp.read().temp().bits() as i32;
-            } else {
-                p.temp_buffer = i32::MIN;
-                warn!("[adc_callback] Temperature reading not ready in ADC callback");
-            }
+        cx.shared.peripherals.lock(|p : &mut sensor_periph::Peripherals|{
+            p.reset_adc_event();
+
+            p.read_temp().unwrap_or_else(|_| warn!("[adc_callback] Temperature not ready!"));
 
             let adc_val = p.get_adc_measurement();
             let do_measurement: bool = adc_val > ADC_MEASUREMENT_THRESHOLD;
             // If the capacitor is sufficiently charged, then enable the oscillator for
             // the moisture probe
             if do_measurement {
-                p.probe_enable.set_high().void_unwrap();
+                p.enable_probe();
             }
             debug!("[adc_callback] Adc measurement: {}, do_measurement: {}", adc_val, do_measurement);
         });

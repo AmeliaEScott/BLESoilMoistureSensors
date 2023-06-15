@@ -1,2 +1,4 @@
 nrf-softdevice/
 softdevice/
+target/
+.idea/
