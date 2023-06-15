@@ -3,11 +3,36 @@ use thiserror_no_std::Error;
 
 use nrf52810_hal::{rtc, gpio, gpiote, ppi, ppi::Ppi, pac, clocks};
 use gpio::{Input, Output, PullDown, PushPull};
+use nrf52810_hal::pac::rtc0::tasks_trigovrflw::TASKS_TRIGOVRFLW_AW;
 use nrf52810_hal::pac::saadc::{resolution, oversample, ch::{pselp, config as adc_config}};
 use nrf52810_hal::prelude::ConfigurablePpi;
 use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 
 use crate::measurement::Measurement;
+
+/// Statically parse the string from environment variable "SENSOR_ID" into a u16.
+/// Compilation will fail if SENSOR_ID is not a valid 4-digit hexadecimal number
+const fn get_id() -> u16 {
+    let string: &'static str = env!("SENSOR_ID");
+    let mut res: u16 = 0;
+    // assert!(string.is_ascii());
+    let mut bytes = string.as_bytes();
+    assert!(bytes.len() == 4);
+    while let [byte, rest @ ..] = bytes {
+        assert!(res <= 0x0FFF);
+        bytes = rest;
+        let digit = match byte {
+            b'0'..=b'9' => *byte - b'0',
+            b'a'..=b'f' => *byte - b'a' + 10,
+            b'F'..=b'F' => *byte - b'A' + 10,
+            _ => panic!("Environment variable SENSOR_ID is not a valid hex number")
+        };
+        res = (res * 16) + digit as u16;
+    }
+    res
+}
+
+pub const SENSOR_ID: u16 = get_id();
 
 #[derive(Error, Debug)]
 pub enum SetupError {
@@ -24,7 +49,9 @@ pub struct Peripherals {
     pub counter: pac::TIMER1,
     pub adc: pac::SAADC,
     pub adc_buffer : &'static mut [i16],
-    pub ppi: ppi::Parts
+    pub ppi: ppi::Parts,
+    pub temp: pac::TEMP,
+    pub temp_buffer: i32
 }
 
 impl Peripherals {
@@ -36,7 +63,7 @@ impl Peripherals {
         let rtc = setup_rtc1(p.RTC1, core)?;
         let clocks = setup_clocks(p.CLOCK);
         let (probe_enable, probe_signal) = setup_gpio(p.P0);
-        let gpiote = setup_gpiote(&probe_signal, &probe_enable, p.GPIOTE);
+        let gpiote = setup_gpiote(&probe_signal, p.GPIOTE);
         setup_counter(&mut p.TIMER1);
         setup_adc(&mut p.SAADC, dma_buffer);
         let ppi = ppi::Parts::new(p.PPI);
@@ -46,7 +73,9 @@ impl Peripherals {
             counter: p.TIMER1,
             adc: p.SAADC,
             adc_buffer: dma_buffer,
-            ppi
+            ppi,
+            temp: p.TEMP,
+            temp_buffer: i32::MIN
         };
 
         peripherals.setup_ppi();
@@ -79,11 +108,12 @@ impl Peripherals {
             ppi.enable();
         }
 
-        // On clock overflow, startup the ADC
+        // On clock overflow, startup the ADC, AND take a temperature measurement
         {
             let ppi = &mut self.ppi.ppi1;
             ppi.set_event_endpoint(&self.rtc.events_ovrflw);
             ppi.set_task_endpoint(&self.adc.tasks_start);
+            ppi.set_fork_task_endpoint(&self.temp.tasks_start);
             ppi.enable();
         }
 
@@ -121,10 +151,15 @@ impl Peripherals {
 
     pub fn get_measurement(&self) -> Measurement {
         Measurement {
+            id: SENSOR_ID,
             capacitor_voltage: self.adc_buffer[0],
             moisture_frequency: self.counter.cc[0].read().cc().bits(),
-            temperature: 0 // TODO
+            temperature: self.temp_buffer
         }
+    }
+
+    pub fn trigger_rtc_overflow(&self) {
+        self.rtc.tasks_trigovrflw.write(|w| w.tasks_trigovrflw().variant(TASKS_TRIGOVRFLW_AW::TRIGGER));
     }
 }
 
@@ -150,7 +185,7 @@ fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals) -> Result<pac::
 {
     // const PRESCALER: u32 = 0xFFF;
     const PRESCALER: u32 = 0x007;
-    const ONE_SECOND: u32 = (clocks::LFCLK_FREQ / (PRESCALER + 1));
+    const ONE_SECOND: u32 = clocks::LFCLK_FREQ / (PRESCALER + 1);
     const QUARTER_SECOND: u32 = ONE_SECOND / 4;
 
     let mut rtc1 = rtc::Rtc::new(rtc1, PRESCALER)?;
@@ -159,7 +194,7 @@ fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals) -> Result<pac::
     rtc1.set_compare(rtc::RtcCompareReg::Compare1, ONE_SECOND + QUARTER_SECOND)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare1);
 
-    rtc1.set_compare(rtc::RtcCompareReg::Compare3, ONE_SECOND * 15)?;
+    rtc1.set_compare(rtc::RtcCompareReg::Compare3, ONE_SECOND * 30)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare3);
     rtc1.enable_interrupt(rtc::RtcInterrupt::Compare1, Some(&mut core.NVIC));
     rtc1.enable_event(rtc::RtcInterrupt::Overflow);
@@ -224,7 +259,7 @@ fn setup_gpio(p0: pac::P0) -> (gpio::Pin<Output<PushPull>>, gpio::Pin<Input<Pull
 /// Configure GPIOTE (GPIO Tasks and Events) to output an event for a rising edge from
 /// the moisture probe timer pin, P0_31. This task will be connected to the counter/timer TIMER1
 /// with PPI.
-fn setup_gpiote(input_pin: &gpio::Pin<Input<PullDown>>, enable_pin: &gpio::Pin<Output<PushPull>>, gpiote: pac::GPIOTE) -> gpiote::Gpiote
+fn setup_gpiote(input_pin: &gpio::Pin<Input<PullDown>>, gpiote: pac::GPIOTE) -> gpiote::Gpiote
 {
     // Setup Gpiote to output an event for probe pulse input rising edge
     let gpiote = gpiote::Gpiote::new(gpiote);

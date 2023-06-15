@@ -1,22 +1,15 @@
 use nrf_softdevice::ble::{gatt_server, peripheral};
 use nrf_softdevice::{ble, raw, Softdevice};
 use core::mem;
-use thiserror_no_std::Error;
-use defmt::{debug, info, warn, error, unwrap};
-use futures::future::join3;
+use defmt::debug;
 use nrf_softdevice::ble::gatt_server::NotifyValueError;
-use crate::measurement::Measurement;
+use crate::measurement;
+use measurement::Measurement;
 
 #[nrf_softdevice::gatt_service(uuid = "866a5627-a761-47cc-9976-7457450e8257")]
 pub struct MoistureSensorService {
-    // #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    // moisture_frequency: u32,
-    // #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    // temperature: u16,
-    // #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    // capacitor_voltage: i16
     #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    measurement: [u8; 8]
+    measurement: measurement::Serialized
 }
 
 #[nrf_softdevice::gatt_server]

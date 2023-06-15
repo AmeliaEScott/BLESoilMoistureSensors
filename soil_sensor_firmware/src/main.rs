@@ -17,7 +17,7 @@ use nrf52810_hal as hal;
 use hal::pac;
 
 use nrf_softdevice::Softdevice;
-use defmt::{trace, debug, warn, intern};
+use defmt::{trace, debug, info, warn, intern};
 
 use measurement::Measurement;
 
@@ -27,6 +27,7 @@ use futures::select_biased;
 use void::ResultVoidExt;
 
 // TODO: Find the right value for this
+//  Also maybe find a better place to put it?
 pub const ADC_MEASUREMENT_THRESHOLD: i16 = 0;
 
 #[app(device = pac, peripherals = false, dispatchers = [SWI3])]
@@ -49,7 +50,7 @@ mod app {
 
     #[init(local = [dma_buffer : [i16; 1] = [0; 1]])]
     fn init(mut cx: init::Context) -> (Shared, Local) {
-        debug!("Init! Look, I'm initializing!!! Isn't that so cool???");
+        info!("Initialized with SENSOR_ID=0x{=u16:#04X}", setup::SENSOR_ID);
         let p = pac::Peripherals::take().unwrap();
         let dma_buffer : &'static mut [i16] = cx.local.dma_buffer.as_mut_slice();
         let peripherals = setup::Peripherals::new(
@@ -58,6 +59,8 @@ mod app {
         let (s, r) = make_channel!(Measurement, 1);
 
         ble_service::spawn().unwrap();
+
+        peripherals.trigger_rtc_overflow();
 
         (
             Shared {
@@ -99,6 +102,14 @@ mod app {
         trace!("[adc_callback] ADC Interrupt");
         cx.shared.peripherals.lock(|p : &mut setup::Peripherals|{
             p.adc.events_end.reset();
+            if p.temp.events_datardy.read().events_datardy().bit() {
+                p.temp.events_datardy.reset();
+                p.temp_buffer = p.temp.temp.read().temp().bits() as i32;
+            } else {
+                p.temp_buffer = i32::MIN;
+                warn!("[adc_callback] Temperature reading not ready in ADC callback");
+            }
+
             let adc_val = p.get_adc_measurement();
             let do_measurement: bool = adc_val > ADC_MEASUREMENT_THRESHOLD;
             // If the capacitor is sufficiently charged, then enable the oscillator for
