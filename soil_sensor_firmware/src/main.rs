@@ -18,13 +18,16 @@ use nrf52810_hal as hal;
 use hal::pac;
 
 use nrf_softdevice::Softdevice;
-use defmt::{debug, info, warn, error, unwrap, intern, Format};
+use defmt::{trace, debug, info, warn, error, unwrap, intern, Format};
 
 use measurement::Measurement;
 
 use futures::future::FutureExt;
 use futures::pin_mut;
 use futures::select_biased;
+
+// TODO: Find the right value for this
+pub const ADC_MEASUREMENT_THRESHOLD: i16 = 0;
 
 #[derive(Debug, Format)]
 pub enum Event {
@@ -38,6 +41,7 @@ mod app {
     use nrf52810_hal::prelude::OutputPin;
     use nrf_softdevice::ble;
     use rtic_sync::{channel::*, make_channel};
+    use crate::Event::ADC;
     use super::*;
 
     type SDRef = &'static mut Softdevice;
@@ -45,7 +49,6 @@ mod app {
     #[shared]
     struct Shared {
         peripherals: setup::Peripherals,
-        run_bluetooth: bool
     }
 
     #[local]
@@ -71,7 +74,6 @@ mod app {
         (
             Shared {
                 peripherals,
-                run_bluetooth: true
             },
             Local {
                 count: 0,
@@ -81,48 +83,41 @@ mod app {
         )
     }
 
-    #[idle]
-    fn idle(cx: idle::Context) -> ! {
-        debug!("Now I am idling");
-        loop {
-            asm::nop();
+    #[task(binds = RTC1, shared = [peripherals], local = [measurements_s])]
+    fn timer_callback(mut cx: timer_callback::Context)
+    {
+        trace!("[timer_callback] Timer interrupt");
+
+        let meas: Measurement = cx.shared.peripherals.lock(|p: &mut setup::Peripherals| {
+            // Need to reset the event, otherwise this interrupt gets triggered repeatedly
+            p.rtc.events_compare[1].reset();
+            p.get_measurement()
+        });
+
+        let should_send = meas.capacitor_voltage > ADC_MEASUREMENT_THRESHOLD;
+        debug!("[timer_callback] Measurement: [cap_v: {}, probe_freq: {}, temp: {}], send? {}",
+                meas.capacitor_voltage, meas.moisture_frequency, meas.temperature, should_send);
+
+        if  should_send {
+            let sender: &mut Sender<'static, Measurement, 1> = cx.local.measurements_s;
+            sender.try_send(meas);
         }
     }
 
-    #[task(binds = RTC1, shared = [peripherals, run_bluetooth], local = [count])]
-    fn timer_callback(mut cx: timer_callback::Context)
-    {
-        cx.shared.peripherals.lock(|p : &mut setup::Peripherals|{
-            p.rtc.events_compare[3].reset();
-            p.rtc.tasks_clear.write(|w| w.tasks_clear().set_bit());
-
-            let probe : u32 = p.timer.cc[3].read().cc().bits();
-            p.timer.tasks_clear.write(|w| w.tasks_clear().set_bit());
-            info!("Probe timer count is {}Hz", probe);
-
-            p.adc.tasks_start.write(|w| w.tasks_start().set_bit());
-            p.adc.tasks_sample.write(|w| w.tasks_sample().set_bit());
-        });
-    }
-
-    #[task(binds = SAADC, shared = [peripherals], local = [measurements_s])]
+    #[task(binds = SAADC, shared = [peripherals], local = [])]
     fn adc_callback(mut cx: adc_callback::Context)
     {
+        trace!("[adc_callback] ADC Interrupt");
         cx.shared.peripherals.lock(|p : &mut setup::Peripherals|{
-            let sender: &mut Sender<'static, Measurement, 1> = &mut cx.local.measurements_s;
-
             p.adc.events_end.reset();
-            let adc_measurement = p.adc_buffer[0];
-            let adc_measurement_mv = (adc_measurement as i32 * 3300i32) / 16384i32;
-            info!("ADC Measurements: {} ({}mV)", adc_measurement, adc_measurement_mv);
-
-            if let Err(_) = sender.try_send(Measurement {
-                capacitor_voltage: adc_measurement,
-                moisture_frequency: 0,
-                temperature: 0
-            }){
-                error!("SendError sending Measurement");
+            let adc_val = p.get_adc_measurement();
+            let do_measurement: bool = adc_val > ADC_MEASUREMENT_THRESHOLD;
+            // If the capacitor is sufficiently charged, then enable the oscillator for
+            // the moisture probe
+            if do_measurement {
+                p.probe_enable.set_high();
             }
+            debug!("[adc_callback] Adc measurement: {}, do_measurement: {}", adc_val, do_measurement);
         });
     }
 
@@ -156,7 +151,7 @@ mod app {
                     let meas = receiver.recv().await.or(Err(intern!("ReceiveError")))?;
                     bt.notify(conn, meas);
                 };
-                debug!("Result in wait_for_measurements: {}", r);
+                debug!("[ble_service.wait_for_measurements] Result in wait_for_measurements: {}", r);
             }
         }
 
@@ -174,19 +169,20 @@ mod app {
             let r: Result<(), defmt::Str> = try {
                 // Start with waiting. Save `init_meas` because we don't want to throw away any
                 // measurements, if we end up successfully establishing a connection.
-                debug!("Waiting for Measurement...");
+                debug!("[ble_service] Waiting for Measurement...");
                 let init_meas = receiver.recv().await.or(Err(intern!("ReceiveError")))?;
-                debug!("Advertising...");
+                debug!("[ble_service] Advertising...");
                 // Advertise for ~10 seconds. If this fails, go back to sleep and wait for the next
                 // Measurement. We don't want to continuously advertise, because this uses a lot
                 // of power.
                 let conn = bt.advertise().await.or(Err(intern!("Advertise timed out")))?;
+                // select_biased! will return an Err. Should be "Connection broken", and never the unreachable branch
                 select_biased! {
                     _ = wait_for_measurements(init_meas, receiver, &bt, &conn).fuse() => Err(intern!("Should be unreachable")),
                     _ = bt.run_server(&conn).fuse() => Err(intern!("Connection broken"))
                 }?;
             };
-            debug!("Result from adv + select: {}", r);
+            debug!("[ble_service] Result from adv + select: {}", r);
         }
     }
 }

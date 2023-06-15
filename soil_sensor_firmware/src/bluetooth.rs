@@ -4,16 +4,19 @@ use core::mem;
 use thiserror_no_std::Error;
 use defmt::{debug, info, warn, error, unwrap};
 use futures::future::join3;
+use nrf_softdevice::ble::gatt_server::NotifyValueError;
 use crate::measurement::Measurement;
 
 #[nrf_softdevice::gatt_service(uuid = "866a5627-a761-47cc-9976-7457450e8257")]
 pub struct MoistureSensorService {
+    // #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
+    // moisture_frequency: u32,
+    // #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
+    // temperature: u16,
+    // #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
+    // capacitor_voltage: i16
     #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    moisture_frequency: u32,
-    #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    temperature: u16,
-    #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    capacitor_voltage: i16
+    measurement: [u8; 8]
 }
 
 #[nrf_softdevice::gatt_server]
@@ -95,13 +98,10 @@ impl SensorBluetooth {
         Ok(conn)
     }
 
-    // TODO: Handle errors
     // TODO: Documentation
     // TODO: Change to array of bytes (Serialize Measurement)
-    pub fn notify(&self, conn: &ble::Connection, meas: Measurement) {
-        let meas_result = self.server.srv.moisture_frequency_notify(conn, &meas.moisture_frequency);
-        let v_cap_result = self.server.srv.capacitor_voltage_notify(conn, &meas.capacitor_voltage);
-        let temp_result = self.server.srv.temperature_notify(conn, &meas.temperature);
+    pub fn notify(&self, conn: &ble::Connection, meas: Measurement) -> Result<(), NotifyValueError> {
+        self.server.srv.measurement_notify(conn, &meas.to_bytes())
     }
 
     pub async fn run_server(&self, conn: &ble::Connection) -> ble::DisconnectedError {

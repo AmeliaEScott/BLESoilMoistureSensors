@@ -7,6 +7,8 @@ use nrf52810_hal::pac::saadc::{resolution, oversample, ch::{pselp, config as adc
 use nrf52810_hal::prelude::ConfigurablePpi;
 use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 
+use crate::measurement::Measurement;
+
 #[derive(Error, Debug)]
 pub enum SetupError {
     PeripheralAccess,
@@ -19,7 +21,7 @@ pub struct Peripherals {
     pub probe_enable: gpio::Pin<Output<PushPull>>,
     pub probe_signal: gpio::Pin<Input<PullDown>>,
     pub gpiote: gpiote::Gpiote,
-    pub timer: pac::TIMER1,
+    pub counter: pac::TIMER1,
     pub adc: pac::SAADC,
     pub adc_buffer : &'static mut [i16],
     pub ppi: ppi::Parts
@@ -34,14 +36,14 @@ impl Peripherals {
         let rtc = setup_rtc1(p.RTC1, core)?;
         let clocks = setup_clocks(p.CLOCK);
         let (probe_enable, probe_signal) = setup_gpio(p.P0);
-        let gpiote = setup_gpiote(&probe_signal, p.GPIOTE);
+        let gpiote = setup_gpiote(&probe_signal, &probe_enable, p.GPIOTE);
         setup_counter(&mut p.TIMER1);
         setup_adc(&mut p.SAADC, dma_buffer);
         let ppi = ppi::Parts::new(p.PPI);
 
         let mut peripherals = Self {
             rtc, clocks, probe_enable, probe_signal, gpiote,
-            timer: p.TIMER1,
+            counter: p.TIMER1,
             adc: p.SAADC,
             adc_buffer: dma_buffer,
             ppi
@@ -52,24 +54,96 @@ impl Peripherals {
         Ok(peripherals)
     }
 
-    /// TODO
+    /// TODO: Docs
     pub fn setup_ppi(&mut self)
     {
+        // TODO: Delete this!
+        //  Use Compare3 to trigger early Overflow
+        {
+            // PPI channel 16 is the last I can use
+            let ppi = &mut self.ppi.ppi16;
+            ppi.set_event_endpoint(&self.rtc.events_compare[3]);
+            ppi.set_task_endpoint(&self.rtc.tasks_trigovrflw);
+            ppi.set_fork_task_endpoint(self.gpiote.channel1().task_clr());
+            ppi.enable();
+        }
+
         // Connect probe input GPIO to counter
-        let ppi0 = &mut self.ppi.ppi0;
-        ppi0.set_event_endpoint(self.gpiote.channel0().event());
-        ppi0.set_task_endpoint(&self.timer.tasks_count);
-        ppi0.enable();
+        {
+            let ppi = &mut self.ppi.ppi0;
+            ppi.set_event_endpoint(self.gpiote.channel0().event());
+            ppi.set_task_endpoint(&self.counter.tasks_count);
+            ppi.enable();
+        }
 
-        let ppi1 = &mut self.ppi.ppi1;
-        ppi1.set_event_endpoint(&self.rtc.events_compare[3]);
-        ppi1.set_task_endpoint(&self.timer.tasks_capture[3]);
-        ppi1.enable();
+        // On clock overflow, startup the ADC
+        {
+            let ppi = &mut self.ppi.ppi1;
+            ppi.set_event_endpoint(&self.rtc.events_ovrflw);
+            ppi.set_task_endpoint(&self.adc.tasks_start);
+            ppi.enable();
+        }
 
-        let ppi2 = &mut self.ppi.ppi2;
-        ppi2.set_event_endpoint(&self.rtc.events_compare[2]);
-        ppi2.set_task_endpoint(&self.timer.tasks_clear);
-        ppi2.enable();
+        // As soon as ADC is started, take a sample
+        {
+            let ppi = &mut self.ppi.ppi2;
+            ppi.set_event_endpoint(&self.adc.events_started);
+            ppi.set_task_endpoint(&self.adc.tasks_sample);
+            ppi.enable();
+        }
+
+        // I don't need to do this, because on END event, the ADC STOPs itself
+        // // When ADC sample is ready, immediately disable it.
+        // // An interrupt will also happen here.
+        // {
+        //     let ppi = &mut self.ppi.ppi3;
+        //     ppi.set_event_endpoint(&self.adc.events_end);
+        //     ppi.set_task_endpoint(&self.adc.tasks_stop);
+        //     ppi.enable();
+        // }
+
+        // TODO: Use ADC events to automatically enable probe timer?
+        //  Probably not, this would be difficult to do correctly
+
+        // On RTC Compare0, clear the counter
+        {
+            let ppi = &mut self.ppi.ppi4;
+            ppi.set_event_endpoint(&self.rtc.events_compare[0]);
+            ppi.set_task_endpoint(&self.counter.tasks_clear);
+            ppi.enable();
+        }
+
+        // On RTC Compare1, capture the counter (This also triggers an interrupt)
+        // Also turn off the probe timer
+        {
+            let ppi = &mut self.ppi.ppi5;
+            ppi.set_event_endpoint(&self.rtc.events_compare[1]);
+            ppi.set_task_endpoint(&self.counter.tasks_capture[0]);
+            ppi.set_fork_task_endpoint(self.gpiote.channel1().task_clr());
+            ppi.enable();
+        }
+
+        // let ppi1 = &mut self.ppi.ppi1;
+        // ppi1.set_event_endpoint(&self.rtc.events_compare[3]);
+        // ppi1.set_task_endpoint(&self.counter.tasks_capture[3]);
+        // ppi1.enable();
+        //
+        // let ppi2 = &mut self.ppi.ppi2;
+        // ppi2.set_event_endpoint(&self.rtc.events_compare[2]);
+        // ppi2.set_task_endpoint(&self.counter.tasks_clear);
+        // ppi2.enable();
+    }
+
+    pub fn get_adc_measurement(&self) -> i16 {
+        self.adc_buffer[0]
+    }
+
+    pub fn get_measurement(&self) -> Measurement {
+        Measurement {
+            capacitor_voltage: self.adc_buffer[0],
+            moisture_frequency: self.counter.cc[0].read().cc().bits(),
+            temperature: 0 // TODO
+        }
     }
 }
 
@@ -77,26 +151,37 @@ impl Peripherals {
 ///
 /// Sets the following registers:
 ///  - Prescaler = 2^12 - 1: Sets the `tick` event to a frequency of 8Hz
-///  - Compare1 = 2: Compare1 event happens 0.25s after Overflow
-///  - Compare2 = 4: Compare2 event happens 0.25s after Compare1
-///  - Compare3 = 12: Compare3 event happens 1s after Compare2
+///  - Enable Overflow event
+///    - On Overflow, begin taking ADC measurement
+///    - Enable probe measurement pin (depending on ADC measurement) immediately after ADC
+///      measurement is available
+///  - Compare0 = 2: Compare0 event happens 0.25s after Overflow
+///    - On Compare0, reset counter (Gives time for oscillator to settle)
+///  - Compare1 = 10: Compare1 event happens 1s after Compare0
+///    - On Compare1, after 1s measurement time, trigger capture, and interrupt
+///  - Compare3 = Whatever
+///    - On Compare3, trigger RTC overflow (Useful for debugging)
 ///
-/// Enables events for Compare1, Compare2, and Compare3.
+/// Enables events for Compare0, Compare1, and maybe Compare3.
 ///
 /// Enables interrupts for Compare3.
-fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals)
-                  -> Result<pac::RTC1, SetupError>
+fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals) -> Result<pac::RTC1, SetupError>
 {
-    let prescaler: u32 = 0xFFF;
-    let mut rtc1 = rtc::Rtc::new(rtc1, prescaler)?;
-    rtc1.set_compare(rtc::RtcCompareReg::Compare1, 2)?;
+    // const PRESCALER: u32 = 0xFFF;
+    const PRESCALER: u32 = 0x007;
+    const ONE_SECOND: u32 = (clocks::LFCLK_FREQ / (PRESCALER + 1));
+    const QUARTER_SECOND: u32 = ONE_SECOND / 4;
+
+    let mut rtc1 = rtc::Rtc::new(rtc1, PRESCALER)?;
+    rtc1.set_compare(rtc::RtcCompareReg::Compare0, QUARTER_SECOND)?;
+    rtc1.enable_event(rtc::RtcInterrupt::Compare0);
+    rtc1.set_compare(rtc::RtcCompareReg::Compare1, ONE_SECOND + QUARTER_SECOND)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare1);
-    rtc1.set_compare(rtc::RtcCompareReg::Compare2, 4)?;
-    rtc1.enable_event(rtc::RtcInterrupt::Compare2);
-    // rtc1.set_compare(rtc::RtcCompareReg::Compare3, 4 + clocks::LFCLK_FREQ / (prescaler + 1))?;
-    rtc1.set_compare(rtc::RtcCompareReg::Compare3, (clocks::LFCLK_FREQ / (prescaler + 1)) * 15);
+
+    rtc1.set_compare(rtc::RtcCompareReg::Compare3, ONE_SECOND * 15)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare3);
-    rtc1.enable_interrupt(rtc::RtcInterrupt::Compare3, Some(&mut core.NVIC));
+    rtc1.enable_interrupt(rtc::RtcInterrupt::Compare1, Some(&mut core.NVIC));
+    rtc1.enable_event(rtc::RtcInterrupt::Overflow);
     rtc1.enable_counter();
 
     Ok(rtc1.release())
@@ -158,13 +243,16 @@ fn setup_gpio(p0: pac::P0) -> (gpio::Pin<Output<PushPull>>, gpio::Pin<Input<Pull
 /// Configure GPIOTE (GPIO Tasks and Events) to output an event for a rising edge from
 /// the moisture probe timer pin, P0_31. This task will be connected to the counter/timer TIMER1
 /// with PPI.
-fn setup_gpiote(pin: &gpio::Pin<Input<PullDown>>, gpiote: pac::GPIOTE) -> gpiote::Gpiote
+fn setup_gpiote(input_pin: &gpio::Pin<Input<PullDown>>, enable_pin: &gpio::Pin<Output<PushPull>>, gpiote: pac::GPIOTE) -> gpiote::Gpiote
 {
     // Setup Gpiote to output an event for probe pulse input rising edge
     let gpiote = gpiote::Gpiote::new(gpiote);
     gpiote.channel0()
-        .input_pin(pin)
+        .input_pin(input_pin)
         .lo_to_hi();
+    //
+    // gpiote.channel1()
+    //     .output_pin(enable_pin);
 
     gpiote
 }
