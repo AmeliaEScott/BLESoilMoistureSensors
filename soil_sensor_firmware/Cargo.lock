@@ -485,7 +485,6 @@ dependencies = [
 [[package]]
 name = "nrf-softdevice"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/nrf-softdevice.git#3b3eabb5383ae16a7772924f5301e6a79d0a591f"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -498,7 +497,7 @@ dependencies = [
  "futures",
  "heapless",
  "nrf-softdevice-macro",
- "nrf-softdevice-s112",
+ "nrf-softdevice-s112 0.1.1",
  "nrf52810-pac",
  "num_enum",
 ]
@@ -506,7 +505,6 @@ dependencies = [
 [[package]]
 name = "nrf-softdevice-macro"
 version = "0.1.0"
-source = "git+https://github.com/embassy-rs/nrf-softdevice.git#3b3eabb5383ae16a7772924f5301e6a79d0a591f"
 dependencies = [
  "Inflector",
  "darling",
@@ -515,6 +513,10 @@ dependencies = [
  "syn 1.0.109",
  "uuid",
 ]
+
+[[package]]
+name = "nrf-softdevice-s112"
+version = "0.1.1"
 
 [[package]]
 name = "nrf-softdevice-s112"
@@ -775,7 +777,7 @@ dependencies = [
  "defmt-rtt",
  "futures",
  "nrf-softdevice",
- "nrf-softdevice-s112",
+ "nrf-softdevice-s112 0.1.1 (git+https://github.com/embassy-rs/nrf-softdevice.git)",
  "nrf52810-hal",
  "num-traits",
  "panic-probe",

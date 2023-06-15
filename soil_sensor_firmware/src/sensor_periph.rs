@@ -265,9 +265,9 @@ fn setup_interrupt_priority(core: &mut cortex_m::Peripherals)
     unsafe {
         // Interrupt priorities are stored in the top 3 bits:
         //  https://community.arm.com/arm-community-blogs/b/embedded-blog/posts/cutting-through-the-confusion-with-arm-cortex-m-interrupt-priorities
-        core.NVIC.set_priority(pac::Interrupt::RTC1, 3 << 5);
-        core.NVIC.set_priority(pac::Interrupt::SAADC, 3 << 5);
-        core.NVIC.set_priority(pac::Interrupt::SWI3, 3 << 5);
+        core.NVIC.set_priority(pac::Interrupt::RTC1, 7 << 5);
+        core.NVIC.set_priority(pac::Interrupt::SAADC, 7 << 5);
+        core.NVIC.set_priority(pac::Interrupt::SWI3, 7 << 5);
     }
 }
 
