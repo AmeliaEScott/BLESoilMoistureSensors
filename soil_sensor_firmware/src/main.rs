@@ -8,7 +8,6 @@ mod bluetooth;
 mod measurement;
 
 use rtic::app;
-use cortex_m::asm;
 
 use defmt_rtt as _;
 use panic_probe as _;
@@ -18,33 +17,24 @@ use nrf52810_hal as hal;
 use hal::pac;
 
 use nrf_softdevice::Softdevice;
-use defmt::{trace, debug, info, warn, error, unwrap, intern, Format};
+use defmt::{trace, debug, warn, intern};
 
 use measurement::Measurement;
 
 use futures::future::FutureExt;
-use futures::pin_mut;
 use futures::select_biased;
+
+use void::ResultVoidExt;
 
 // TODO: Find the right value for this
 pub const ADC_MEASUREMENT_THRESHOLD: i16 = 0;
 
-#[derive(Debug, Format)]
-pub enum Event {
-    RTC,
-    ADC
-}
-
 #[app(device = pac, peripherals = false, dispatchers = [SWI3])]
 mod app {
-    use futures::future::FusedFuture;
     use nrf52810_hal::prelude::OutputPin;
     use nrf_softdevice::ble;
     use rtic_sync::{channel::*, make_channel};
-    use crate::Event::ADC;
     use super::*;
-
-    type SDRef = &'static mut Softdevice;
 
     #[shared]
     struct Shared {
@@ -53,7 +43,6 @@ mod app {
 
     #[local]
     struct Local {
-        count: u32,
         measurements_s: Sender<'static, Measurement, 1>,
         measurements_r: Receiver<'static, Measurement, 1>,
     }
@@ -61,11 +50,10 @@ mod app {
     #[init(local = [dma_buffer : [i16; 1] = [0; 1]])]
     fn init(mut cx: init::Context) -> (Shared, Local) {
         debug!("Init! Look, I'm initializing!!! Isn't that so cool???");
-        let mut p = pac::Peripherals::take().unwrap();
+        let p = pac::Peripherals::take().unwrap();
         let dma_buffer : &'static mut [i16] = cx.local.dma_buffer.as_mut_slice();
-        let mut peripherals = setup::Peripherals::new(
+        let peripherals = setup::Peripherals::new(
             p, &mut cx.core, dma_buffer).unwrap();
-        peripherals.probe_enable.set_high();
 
         let (s, r) = make_channel!(Measurement, 1);
 
@@ -76,7 +64,6 @@ mod app {
                 peripherals,
             },
             Local {
-                count: 0,
                 measurements_r: r,
                 measurements_s: s
             }
@@ -91,6 +78,8 @@ mod app {
         let meas: Measurement = cx.shared.peripherals.lock(|p: &mut setup::Peripherals| {
             // Need to reset the event, otherwise this interrupt gets triggered repeatedly
             p.rtc.events_compare[1].reset();
+            // TODO: Do this with PPI
+            let _ = p.probe_enable.set_low().void_unwrap();
             p.get_measurement()
         });
 
@@ -100,7 +89,7 @@ mod app {
 
         if  should_send {
             let sender: &mut Sender<'static, Measurement, 1> = cx.local.measurements_s;
-            sender.try_send(meas);
+            sender.try_send(meas).unwrap_or_else(|_| warn!("[timer_callback] Send error"));
         }
     }
 
@@ -115,14 +104,14 @@ mod app {
             // If the capacitor is sufficiently charged, then enable the oscillator for
             // the moisture probe
             if do_measurement {
-                p.probe_enable.set_high();
+                p.probe_enable.set_high().void_unwrap();
             }
             debug!("[adc_callback] Adc measurement: {}, do_measurement: {}", adc_val, do_measurement);
         });
     }
 
     #[task(priority = 1)]
-    async fn softdevice_runner(cx: softdevice_runner::Context) {
+    async fn softdevice_runner(_: softdevice_runner::Context) {
         // TODO: Is there a better way to do this?
         unsafe {
             Softdevice::steal().run().await;
@@ -133,7 +122,7 @@ mod app {
     async fn ble_service(mut cx: ble_service::Context) {
         let receiver: &mut Receiver<'static, Measurement, 1> = &mut cx.local.measurements_r;
 
-        let mut bt = bluetooth::SensorBluetooth::new().unwrap();
+        let bt = bluetooth::SensorBluetooth::new().unwrap();
         softdevice_runner::spawn().unwrap();
 
         // This async function will loop forever, waiting for new Measurements and sending
@@ -144,12 +133,16 @@ mod app {
         // The function will first immediately publish `init_meas` on BLE, then start waiting
         // for the next measurement.
         async fn wait_for_measurements(init_meas: Measurement, receiver: &mut Receiver<'static, Measurement, 1>, bt: &bluetooth::SensorBluetooth, conn: &ble::Connection) -> ! {
-            bt.notify(conn, init_meas);
+            bt.notify(conn, init_meas).unwrap_or_else(|err| {
+                warn!("[ble_service.wait_for_measurements] NotifyValueError {}", err)
+            });
 
             loop {
                 let r: Result<(), defmt::Str> = try {
                     let meas = receiver.recv().await.or(Err(intern!("ReceiveError")))?;
-                    bt.notify(conn, meas);
+                    bt.notify(conn, meas).unwrap_or_else(|err| {
+                        warn!("[ble_service.wait_for_measurements] NotifyValueError {}", err)
+                    });
                 };
                 debug!("[ble_service.wait_for_measurements] Result in wait_for_measurements: {}", r);
             }

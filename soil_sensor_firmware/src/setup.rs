@@ -54,7 +54,10 @@ impl Peripherals {
         Ok(peripherals)
     }
 
-    /// TODO: Docs
+    /// Configure PPI to automatically do the following:
+    ///  - Use counter TIMER1 to count pulses from moisture probe oscillator output
+    ///  - On RTC1 Overflow, start ADC and take a sample
+    ///  - Between RTC1.Compare0 and RTC1.Compare1 (Normally exactly 1s), count the pulses from the probe
     pub fn setup_ppi(&mut self)
     {
         // TODO: Delete this!
@@ -92,19 +95,6 @@ impl Peripherals {
             ppi.enable();
         }
 
-        // I don't need to do this, because on END event, the ADC STOPs itself
-        // // When ADC sample is ready, immediately disable it.
-        // // An interrupt will also happen here.
-        // {
-        //     let ppi = &mut self.ppi.ppi3;
-        //     ppi.set_event_endpoint(&self.adc.events_end);
-        //     ppi.set_task_endpoint(&self.adc.tasks_stop);
-        //     ppi.enable();
-        // }
-
-        // TODO: Use ADC events to automatically enable probe timer?
-        //  Probably not, this would be difficult to do correctly
-
         // On RTC Compare0, clear the counter
         {
             let ppi = &mut self.ppi.ppi4;
@@ -119,19 +109,10 @@ impl Peripherals {
             let ppi = &mut self.ppi.ppi5;
             ppi.set_event_endpoint(&self.rtc.events_compare[1]);
             ppi.set_task_endpoint(&self.counter.tasks_capture[0]);
-            ppi.set_fork_task_endpoint(self.gpiote.channel1().task_clr());
+            // TODO: Configure GPIOTE for this
+            // ppi.set_fork_task_endpoint(self.gpiote.channel1().task_clr());
             ppi.enable();
         }
-
-        // let ppi1 = &mut self.ppi.ppi1;
-        // ppi1.set_event_endpoint(&self.rtc.events_compare[3]);
-        // ppi1.set_task_endpoint(&self.counter.tasks_capture[3]);
-        // ppi1.enable();
-        //
-        // let ppi2 = &mut self.ppi.ppi2;
-        // ppi2.set_event_endpoint(&self.rtc.events_compare[2]);
-        // ppi2.set_task_endpoint(&self.counter.tasks_clear);
-        // ppi2.enable();
     }
 
     pub fn get_adc_measurement(&self) -> i16 {
@@ -250,9 +231,6 @@ fn setup_gpiote(input_pin: &gpio::Pin<Input<PullDown>>, enable_pin: &gpio::Pin<O
     gpiote.channel0()
         .input_pin(input_pin)
         .lo_to_hi();
-    //
-    // gpiote.channel1()
-    //     .output_pin(enable_pin);
 
     gpiote
 }

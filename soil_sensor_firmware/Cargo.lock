@@ -776,6 +776,7 @@ dependencies = [
  "rtic",
  "rtic-sync",
  "thiserror-no-std",
+ "void",
 ]
 
 [[package]]
