@@ -44,7 +44,6 @@ pub enum SetupError {
 pub struct Peripherals {
     rtc: pac::RTC1,
     probe_enable: gpio::Pin<Output<PushPull>>,
-    clocks: clocks::Clocks<clocks::ExternalOscillator, clocks::ExternalOscillator, clocks::LfOscStarted>,
     #[allow(dead_code)]
     probe_signal: gpio::Pin<Input<PullDown>>,
     gpiote: gpiote::Gpiote,
@@ -52,6 +51,7 @@ pub struct Peripherals {
     adc: pac::SAADC,
     adc_buffer : &'static mut [i16],
     ppi: ppi::Parts,
+    temp: pac::TEMP,
     temp_buffer: i32,
     sequence: u16,
 }
@@ -63,7 +63,7 @@ impl Peripherals {
         p.POWER.dcdcen.write(|w| w.dcdcen().set_bit());
 
         let rtc = setup_rtc1(p.RTC1, core)?;
-        let clocks = setup_clocks(p.CLOCK);
+        setup_clocks(p.CLOCK);
         let (probe_enable, probe_signal) = setup_gpio(p.P0);
         let gpiote = setup_gpiote(&probe_signal, p.GPIOTE);
         setup_counter(&mut p.TIMER1);
@@ -71,11 +71,12 @@ impl Peripherals {
         let ppi = ppi::Parts::new(p.PPI);
 
         let mut peripherals = Self {
-            rtc, probe_enable, probe_signal, gpiote, clocks,
+            rtc, probe_enable, probe_signal, gpiote,
             counter: p.TIMER1,
             adc: p.SAADC,
             adc_buffer: dma_buffer,
             ppi,
+            temp: p.TEMP,
             temp_buffer: i32::MIN,
             sequence: u16::MAX,
         };
@@ -111,12 +112,13 @@ impl Peripherals {
         }
 
         // On clock overflow, startup the ADC
-        // Originally I had this also take a TEMP measurement, because I didn't realize the
-        // TEMP peripheral is used by the SoftDevice :)
         {
             let ppi = &mut self.ppi.ppi1;
             ppi.set_event_endpoint(&self.rtc.events_ovrflw);
             ppi.set_task_endpoint(&self.adc.tasks_start);
+            // TODO: Does this cause any issues? I'm not supposed to use the TEMP sensor because
+            //  the SoftDevice has it reserved...
+            ppi.set_fork_task_endpoint(&self.temp.tasks_start);
             ppi.enable();
         }
 
@@ -162,14 +164,13 @@ impl Peripherals {
 
     // TODO: Fix!
     pub fn read_temp(&mut self) -> Result<(), ()> {
-        // if self.temp.events_datardy.read().events_datardy().bit() {
-        //     self.temp.events_datardy.reset();
-        //     self.temp_buffer = self.temp.temp.read().temp().bits() as i32;
-        //     Ok(())
-        // } else {
-        //     Err(())
-        // }
-        Ok(())
+        if self.temp.events_datardy.read().events_datardy().bit() {
+            self.temp.events_datardy.reset();
+            self.temp_buffer = self.temp.temp.read().temp().bits() as i32;
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     pub fn get_measurement(&mut self) -> Measurement {

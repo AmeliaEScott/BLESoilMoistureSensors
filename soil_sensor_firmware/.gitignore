@@ -1,3 +1,5 @@
 .idea/
 target/
 softdevice/
+
+s112_nrf52_7.3.0_softdevice.hex

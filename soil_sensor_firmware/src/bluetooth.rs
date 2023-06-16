@@ -17,7 +17,7 @@ pub struct Server {
 }
 
 pub struct SensorBluetooth {
-    pub sd: &'static mut Softdevice,
+    pub sd: &'static Softdevice,
     pub server: Server,
 }
 

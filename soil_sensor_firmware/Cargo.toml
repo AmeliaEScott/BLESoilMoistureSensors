@@ -21,8 +21,8 @@ rtic-sync = "1.0.1"
 nrf52810-hal = { version = "^0.16", features = ["rt"]}
 num-traits = { version = "0.2.14", default-features = false, features=["libm"] }  # For float rounding and abs.
 
-#nrf-softdevice = { git = "https://github.com/embassy-rs/nrf-softdevice.git", features = [
-nrf-softdevice = { path = "../../nrf-softdevice/nrf-softdevice", features = [
+nrf-softdevice = { git = "https://github.com/embassy-rs/nrf-softdevice.git", features = [
+#nrf-softdevice = { path = "../../nrf-softdevice/nrf-softdevice", features = [
     "nightly", "defmt", "nrf52810", "s112", "ble-peripheral", "ble-gatt-server", "ble-gatt-server",
     "critical-section-impl", "usable-from-interrupts"
 ]}
