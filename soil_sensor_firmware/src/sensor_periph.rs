@@ -13,11 +13,12 @@ use void::ResultVoidExt;
 
 /// Statically parse the string from environment variable "SENSOR_ID" into a u16.
 /// Compilation will fail if SENSOR_ID is not a valid 4-digit hexadecimal number
-const fn get_id() -> u16 {
+const fn get_id() -> (u16, [u8; 4]) {
     let string: &'static str = env!("SENSOR_ID");
     let mut res: u16 = 0;
     // assert!(string.is_ascii());
     let mut bytes = string.as_bytes();
+    let bytes_array: [u8; 4] = [bytes[0], bytes[1], bytes[2], bytes[3]];
     assert!(bytes.len() == 4);
     while let [byte, rest @ ..] = bytes {
         assert!(res <= 0x0FFF);
@@ -30,10 +31,11 @@ const fn get_id() -> u16 {
         };
         res = (res * 16) + digit as u16;
     }
-    res
+    (res, bytes_array)
 }
 
-pub const SENSOR_ID: u16 = get_id();
+pub const SENSOR_ID: u16 = get_id().0;
+pub const SENSOR_ID_BYTES: [u8; 4] = get_id().1;
 
 #[derive(Error, Debug)]
 pub enum SetupError {
@@ -61,6 +63,12 @@ impl Peripherals {
     {
         setup_interrupt_priority(core);
         p.POWER.dcdcen.write(|w| w.dcdcen().set_bit());
+
+        // Use Timer2 for delay in rtic software tasks.
+        // Systic I think won't work when the CPU is asleep (which should be most of the time),
+        // so we need to use a peripheral. Timer2 is the only one available.
+        let token = rtic_monotonics::create_nrf_timer2_monotonic_token!();
+        rtic_monotonics::nrf::timer::Timer2::start(p.TIMER2, token);
 
         let rtc = setup_rtc1(p.RTC1, core)?;
         setup_clocks(p.CLOCK);

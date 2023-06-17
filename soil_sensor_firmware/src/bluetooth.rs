@@ -4,6 +4,7 @@ use core::mem;
 use defmt::debug;
 use nrf_softdevice::ble::gatt_server::NotifyValueError;
 use soil_sensor_common::{Measurement, Serialized};
+use crate::sensor_periph::SENSOR_ID_BYTES as ID;
 
 #[nrf_softdevice::gatt_service(uuid = "866a5627-a761-47cc-9976-7457450e8257")]
 pub struct MoistureSensorService {
@@ -44,9 +45,9 @@ impl SensorBluetooth {
                 periph_role_count: 1,
             }),
             gap_device_name: Some(raw::ble_gap_cfg_device_name_t {
-                p_value: b"BLESoilSensor" as *const u8 as _,
-                current_len: 13,
-                max_len: 13,
+                p_value: b"BLE Soil Sensor" as *const u8 as _,
+                current_len: 15,
+                max_len: 15,
                 write_perm: unsafe { mem::zeroed() },
                 _bitfield_1: raw::ble_gap_cfg_device_name_t::new_bitfield_1(raw::BLE_GATTS_VLOC_STACK as u8),
             }),
@@ -67,21 +68,32 @@ impl SensorBluetooth {
     pub async fn advertise(&self) -> Result<ble::Connection, peripheral::AdvertiseError> {
         // TODO: Figure out what this data actually means
         let adv_data = &[
+            // Flags
             0x02, 0x01, raw::BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE as u8,
+            // Complete list of 16-bit service class UUIDs
             0x03, 0x03, 0x09, 0x18,
-            0x0a, 0x09, b'H', b'e', b'l', b'l', b'o', b'R', b'u', b's', b't',
+            // Name: "BLE Soil Sensor <ID>"
+            0x15, 0x09, b'B', b'L', b'E', b' ', b'S', b'o', b'i', b'l', b' ',
+            b'S', b'e', b'n', b's', b'o', b'r', b' ', ID[0], ID[1], ID[2], ID[3],
         ];
 
         let scan_data = &[
             0x03, 0x03, 0x09, 0x18,
+            // Complete list of 128-bit Service UUIDs (Just the one service)
+            0x11, 0x07, 0x57, 0x82, 0x0e, 0x45, 0x57, 0x74, 0x76, 0x99, 0xcc,
+            0x47, 0x61, 0xa7, 0x27, 0x56, 0x6a, 0x86
         ];
 
         let config = peripheral::Config{
             // 10 seconds
             timeout: Some(1000),
             // TODO: Experiment with interval, test power usage
+            //   Too long of an interval seems to make it difficult for the bridge to connect
+            //   (At least from my Linux desktop. My phone has no problem with the 1-second
+            //   interval! Maybe I need to configure a timeout somewhere...)
             // 1 second. Documentation says this is units of 0.625uS, but it is actually 0.625mS
-            interval: 1600,
+            // interval: 1600,
+            interval: 400,
             filter_policy: peripheral::FilterPolicy::Any,
             ..peripheral::Config::default()
         };

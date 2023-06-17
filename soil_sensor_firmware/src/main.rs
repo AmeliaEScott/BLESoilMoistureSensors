@@ -31,6 +31,7 @@ pub const ADC_MEASUREMENT_THRESHOLD: i16 = 0;
 mod app {
     use nrf_softdevice::ble;
     use rtic_sync::{channel::*, make_channel};
+    use rtic_monotonics::nrf::timer::{Timer2, ExtU64};
     use super::*;
 
     #[shared]
@@ -173,6 +174,13 @@ mod app {
                 // Measurement. We don't want to continuously advertise, because this uses a lot
                 // of power.
                 let conn = bt.advertise().await.or(Err(intern!("Advertise timed out")))?;
+
+                // Because measurements only happen ~1 / day, we don't want the bridge to miss
+                // the first measurement after connecting. This delay gives the bridge time to
+                // subscribe to measurement notifications.
+                // TODO: Instead of a blind delay, try getting the actual status of
+                //  notification subscription
+                Timer2::delay(1000.millis()).await;
                 // select_biased! will return an Err. Should be "Connection broken", and never the unreachable branch
                 select_biased! {
                     _ = wait_for_measurements(init_meas, receiver, &bt, &conn).fuse() => Err(intern!("Should be unreachable")),
