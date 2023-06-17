@@ -4,7 +4,7 @@
 use defmt::Format;
 
 #[cfg_attr(feature = "defmt", derive(Format))]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Measurement {
     pub id: u16,
     pub moisture_frequency: u32,
