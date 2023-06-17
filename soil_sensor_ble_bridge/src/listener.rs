@@ -5,6 +5,7 @@ use std::time::Duration;
 use std::fmt;
 use btleplug::api::bleuuid::BleUuid;
 use tokio::time;
+use tokio::sync::broadcast;
 use uuid::{Uuid, uuid};
 use thiserror::Error;
 use log::{debug, info, warn, error};
@@ -46,15 +47,18 @@ async fn central_listener(central: Adapter) -> Result<(), ListenError> {
     // }).await?;
     central.start_scan(ScanFilter::default());
 
+    let (mut tx, _) = broadcast::channel::<CentralEvent>(50);
+
     // Print based on whatever the event receiver outputs. Note that the event
     // receiver blocks, so in a real program, this should be run in its own
     // thread (not task, as this library does not yet use async channels).
     while let Some(event) = events.next().await {
+        tx.send(event.clone());
         match event {
             CentralEvent::DeviceDiscovered(id) => {
                 println!("DeviceDiscovered: {:?}", id);
                 let perip = central.peripheral(&id).await.unwrap();
-                tokio::spawn(sensor_manager::manage_sensor(perip));
+                tokio::spawn(sensor_manager::manage_sensor_wrapper(perip, tx.subscribe()));
             }
             CentralEvent::DeviceConnected(id) => {
                 println!("DeviceConnected: {:?}", id);

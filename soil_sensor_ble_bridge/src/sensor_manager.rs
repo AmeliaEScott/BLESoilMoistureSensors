@@ -1,6 +1,6 @@
 use std::array::TryFromSliceError;
-use btleplug::api::{Central, CentralEvent, Characteristic, CharPropFlags, Manager as _, Peripheral as _, ScanFilter};
-use btleplug::platform::{Adapter, Manager, Peripheral};
+use btleplug::api::{Central, CentralEvent, Characteristic, CharPropFlags, Manager as _, Peripheral as _, ScanFilter, ValueNotification};
+use btleplug::platform::{Adapter, Manager, Peripheral, PeripheralId};
 use futures::stream::StreamExt;
 use std::time::Duration;
 use std::fmt;
@@ -9,6 +9,8 @@ use tokio::time;
 use uuid::{Uuid, uuid};
 use log::{debug, info, warn, error};
 use soil_sensor_common::{Measurement, Serialized};
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::RecvError;
 use crate::sensor_manager::SensorError::SensorDisconnected;
 
 /// UUID of the Service for sensor measurements.
@@ -28,9 +30,17 @@ pub enum SensorError {
     InvalidSensor(String),
     #[error("SensorDisconnected")]
     SensorDisconnected,
+    #[error("ChannelDisconnected: {:#?}", .0)]
+    ChannelDisconnected(#[from] RecvError),
 }
 
-pub async fn manage_sensor(sensor: Peripheral) -> Result<(), SensorError> {
+// TODO: Figure out error handling (And remove this!)
+pub async fn manage_sensor_wrapper(sensor: Peripheral, mut receiver: broadcast::Receiver<CentralEvent>) {
+    let r = manage_sensor(sensor, receiver).await;
+    error!("{:#?}", r);
+}
+
+pub async fn manage_sensor(sensor: Peripheral, mut receiver: broadcast::Receiver<CentralEvent>) -> Result<(), SensorError> {
     debug!("Peripheral ID: {}, Connected: {}", sensor.id(), sensor.is_connected().await?);
     let prop = sensor.properties().await?.ok_or(SensorError::NoOptions)?;
     debug!("Properties: {:#?}", prop);
@@ -82,13 +92,28 @@ pub async fn manage_sensor(sensor: Peripheral) -> Result<(), SensorError> {
     debug!("Notification stream starting");
     let mut notification_stream = sensor.notifications().await?;
     // Process while the BLE connection is not broken or stopped.
-    while let Some(data) = notification_stream.next().await {
-        debug!(
-            "Received data from {:?} [{:?}]: {:?}",
-            name, data.uuid, data.value
-        );
-        if data.uuid == SENSOR_CHARACTERISTIC_UUID {
-            tokio::spawn(handle_measurement(name.clone(), data.value.clone()));
+    loop {
+        // error!("{:#?}", receiver.recv().await);
+        tokio::select! {
+            data_result = notification_stream.next() => {
+                let data: ValueNotification = data_result.ok_or(SensorDisconnected)?;
+                debug!(
+                    "Received data from {:?} [{:?}]: {:?}",
+                    name, data.uuid, data.value
+                );
+                if data.uuid == SENSOR_CHARACTERISTIC_UUID {
+                    tokio::spawn(handle_measurement(name.clone(), data.value.clone()));
+                }
+            },
+            event_result = receiver.recv() => {
+                if let Ok(CentralEvent::DeviceDisconnected(id)) = event_result {
+                    if id == sensor.id() {
+                        error!("It disconnected!!!");
+                        sensor.disconnect().await?;
+                        sensor.connect().await?;
+                    }
+                }
+            }
         }
     }
     Err(SensorDisconnected)
