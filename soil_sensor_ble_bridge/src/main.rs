@@ -18,6 +18,10 @@ const NOTIFY_CHARACTERISTIC_UUID: Uuid = Uuid::from_u128(0x866a5627_a761_47cc_99
 async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
 
+    // TODO: Possible clear bluetooth cache? (Delete /var/log/bluetooth)
+    //  Except I can't do that without root... :(
+    //  Mayhaps might I rather disable cache entirely :)
+    //   https://www.spinics.net/lists/linux-bluetooth/msg90155.html
     listener::main_loop().await;
 
     Ok(())

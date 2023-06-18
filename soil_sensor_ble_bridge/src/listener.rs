@@ -49,43 +49,55 @@ async fn central_listener(central: Adapter) -> Result<(), ListenError> {
 
     let (mut tx, _) = broadcast::channel::<CentralEvent>(50);
 
+    tokio::spawn(event_logger(tx.subscribe()));
+
     // Print based on whatever the event receiver outputs. Note that the event
     // receiver blocks, so in a real program, this should be run in its own
     // thread (not task, as this library does not yet use async channels).
     while let Some(event) = events.next().await {
         tx.send(event.clone());
+        if let CentralEvent::DeviceDiscovered(id) = &event {
+            let perip = central.peripheral(&id).await.unwrap();
+            tokio::spawn(sensor_manager::manage_sensor_wrapper(perip, tx.subscribe()));
+        }
+
+    }
+
+    Ok(())
+}
+
+async fn event_logger(mut receiver: broadcast::Receiver<CentralEvent>) {
+    while let Ok(event) = receiver.recv().await {
         match event {
             CentralEvent::DeviceDiscovered(id) => {
-                println!("DeviceDiscovered: {:?}", id);
-                let perip = central.peripheral(&id).await.unwrap();
-                tokio::spawn(sensor_manager::manage_sensor_wrapper(perip, tx.subscribe()));
+                debug!("DeviceDiscovered: {:?}", id);
             }
             CentralEvent::DeviceConnected(id) => {
-                println!("DeviceConnected: {:?}", id);
+                debug!("DeviceConnected: {:?}", id);
             }
             CentralEvent::DeviceDisconnected(id) => {
-                println!("DeviceDisconnected: {:?}", id);
+                debug!("DeviceDisconnected: {:?}", id);
             }
             CentralEvent::ManufacturerDataAdvertisement {
                 id,
                 manufacturer_data,
             } => {
-                println!(
+                debug!(
                     "ManufacturerDataAdvertisement: {:?}, {:?}",
                     id, manufacturer_data
                 );
             }
             CentralEvent::ServiceDataAdvertisement { id, service_data } => {
-                println!("ServiceDataAdvertisement: {:?}, {:?}", id, service_data);
+                debug!("ServiceDataAdvertisement: {:?}, {:?}", id, service_data);
             }
             CentralEvent::ServicesAdvertisement { id, services } => {
                 let services: Vec<String> =
                     services.into_iter().map(|s| s.to_short_string()).collect();
-                println!("ServicesAdvertisement: {:?}, {:?}", id, services);
+                debug!("ServicesAdvertisement: {:?}, {:?}", id, services);
             }
-            _ => {}
+            CentralEvent::DeviceUpdated(id) => {
+                debug!("DeviceUpdated: {:?}", id);
+            }
         }
     }
-
-    Ok(())
 }

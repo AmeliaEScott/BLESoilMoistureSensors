@@ -37,33 +37,31 @@ pub enum SensorError {
 // TODO: Figure out error handling (And remove this!)
 pub async fn manage_sensor_wrapper(sensor: Peripheral, mut receiver: broadcast::Receiver<CentralEvent>) {
     let r = manage_sensor(sensor, receiver).await;
-    error!("{:#?}", r);
+    warn!("Disconnected from sensor with error: {:?}", r);
 }
 
-pub async fn manage_sensor(sensor: Peripheral, mut receiver: broadcast::Receiver<CentralEvent>) -> Result<(), SensorError> {
+pub async fn connect(sensor: &Peripheral) -> Result<(String, Characteristic), SensorError> {
     debug!("Peripheral ID: {}, Connected: {}", sensor.id(), sensor.is_connected().await?);
     let prop = sensor.properties().await?.ok_or(SensorError::NoOptions)?;
     debug!("Properties: {:#?}", prop);
 
     let name = prop.local_name.unwrap_or("".to_string());
 
-    let has_service = prop.services.contains(&SENSOR_SERVICE_UUID);
     let good_name = name.starts_with(SENSOR_NAME_PREFIX);
 
-    debug!("{}: has_service: {}, good_name: {}", name, has_service, good_name);
-
-    if !has_service || !good_name {
+    if !good_name {
         return Err(SensorError::InvalidSensor(name));
     }
 
-
-    while !sensor.is_connected().await? {
-        debug!("Connecting to {}...", name);
-        let r = sensor.connect().await;
-        debug!("{:#?}", r);
-    }
-    debug!("Connected to {}!", name);
+    reconnect(&sensor, &name).await?;
     sensor.discover_services().await?;
+    let prop = sensor.properties().await?.ok_or(SensorError::NoOptions)?;
+
+    if !prop.services.contains(&SENSOR_SERVICE_UUID) {
+        sensor.disconnect().await?;
+        return Err(SensorError::InvalidSensor(name));
+    }
+
 
     let services = sensor.services();
     debug!("{:#?}", services);
@@ -87,12 +85,37 @@ pub async fn manage_sensor(sensor: Peripheral, mut receiver: broadcast::Receiver
         // .next() will be None if no appropriate characteristic found
         .next().ok_or(SensorError::InvalidSensor(name.clone()))?;
 
-    debug!("Subscribing to characteristic {:#?}", characteristic);
-    sensor.subscribe(&characteristic).await?;
-    debug!("Notification stream starting");
+    Ok((name, characteristic.clone()))
+}
+
+pub async fn reconnect(sensor: &Peripheral, name: &str) -> Result<(), btleplug::Error> {
+    while !sensor.is_connected().await? {
+        debug!("Reconnecting to {}...", name);
+        let r = sensor.connect().await;
+        debug!("{:#?}", r);
+        if r.is_err() {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn manage_sensor(sensor: Peripheral, mut receiver: broadcast::Receiver<CentralEvent>) -> Result<(), SensorError> {
+    let (name, characteristic) = connect(&sensor).await?;
+    info!("Connected to {}!", name);
+
     let mut notification_stream = sensor.notifications().await?;
+
+    sensor.subscribe(&characteristic).await?;
     // Process while the BLE connection is not broken or stopped.
     loop {
+        if !sensor.is_connected().await? {
+            debug!("{} is disconnected. Reconnecting...", name);
+            reconnect(&sensor, &name).await?;
+            sensor.subscribe(&characteristic).await?;
+            // TODO: Must I subscribe again?
+        }
         // error!("{:#?}", receiver.recv().await);
         tokio::select! {
             data_result = notification_stream.next() => {
@@ -105,15 +128,7 @@ pub async fn manage_sensor(sensor: Peripheral, mut receiver: broadcast::Receiver
                     tokio::spawn(handle_measurement(name.clone(), data.value.clone()));
                 }
             },
-            event_result = receiver.recv() => {
-                if let Ok(CentralEvent::DeviceDisconnected(id)) = event_result {
-                    if id == sensor.id() {
-                        error!("It disconnected!!!");
-                        sensor.disconnect().await?;
-                        sensor.connect().await?;
-                    }
-                }
-            }
+            event_result = receiver.recv() => {}
         }
     }
     Err(SensorDisconnected)
