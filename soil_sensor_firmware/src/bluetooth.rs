@@ -4,7 +4,14 @@ use core::mem;
 use defmt::debug;
 use nrf_softdevice::ble::gatt_server::NotifyValueError;
 use soil_sensor_common::{Measurement, Serialized};
-use crate::sensor_periph::SENSOR_ID_BYTES as ID;
+use crate::sensor_periph::{SENSOR_ID_BYTES as ID, SENSOR_ID_BYTES};
+
+// TODO: Surely there's a more elegant way to do this...
+const GAP_NAME: [u8; 20] = [
+    b'B', b'L', b'E', b' ', b'S', b'o', b'i', b'l', b' ',
+    b'S', b'e', b'n', b's', b'o', b'r', b' ',
+    SENSOR_ID_BYTES[0], SENSOR_ID_BYTES[1], SENSOR_ID_BYTES[2], SENSOR_ID_BYTES[3]
+];
 
 #[nrf_softdevice::gatt_service(uuid = "866a5627-a761-47cc-9976-7457450e8257")]
 pub struct MoistureSensorService {
@@ -45,9 +52,9 @@ impl SensorBluetooth {
                 periph_role_count: 1,
             }),
             gap_device_name: Some(raw::ble_gap_cfg_device_name_t {
-                p_value: b"BLE Soil Sensor" as *const u8 as _,
-                current_len: 15,
-                max_len: 15,
+                p_value: &GAP_NAME as *const u8 as _,
+                current_len: GAP_NAME.len() as u16,
+                max_len: GAP_NAME.len() as u16,
                 write_perm: unsafe { mem::zeroed() },
                 _bitfield_1: raw::ble_gap_cfg_device_name_t::new_bitfield_1(raw::BLE_GATTS_VLOC_STACK as u8),
             }),
@@ -66,7 +73,6 @@ impl SensorBluetooth {
 
     // TODO: Documentation
     pub async fn advertise(&self) -> Result<ble::Connection, peripheral::AdvertiseError> {
-        // TODO: Figure out what this data actually means
         let adv_data = &[
             // Flags
             0x02, 0x01, raw::BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE as u8,

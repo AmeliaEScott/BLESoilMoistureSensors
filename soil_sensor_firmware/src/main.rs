@@ -73,6 +73,16 @@ mod app {
         )
     }
 
+    #[idle]
+    fn idle(cx: idle::Context) -> ! {
+        loop {
+            trace!("Idle");
+            unsafe {
+                nrf_softdevice::raw::sd_app_evt_wait();
+            }
+        }
+    }
+
     #[task(binds = RTC1, shared = [peripherals], local = [measurements_s])]
     fn timer_callback(mut cx: timer_callback::Context)
     {
@@ -180,7 +190,7 @@ mod app {
                 // subscribe to measurement notifications.
                 // TODO: Instead of a blind delay, try getting the actual status of
                 //  notification subscription
-                Timer2::delay(1000.millis()).await;
+                Timer2::delay(5000.millis()).await;
                 // select_biased! will return an Err. Should be "Connection broken", and never the unreachable branch
                 select_biased! {
                     _ = wait_for_measurements(init_meas, receiver, &bt, &conn).fuse() => Err(intern!("Should be unreachable")),

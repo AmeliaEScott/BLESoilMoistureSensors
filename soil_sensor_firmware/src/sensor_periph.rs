@@ -11,6 +11,9 @@ use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 use soil_sensor_common::Measurement;
 use void::ResultVoidExt;
 
+const DEBUG_SLEEP_SECONDS: u32 = 60;
+const SHORT_SLEEP: bool = false;
+
 /// Statically parse the string from environment variable "SENSOR_ID" into a u16.
 /// Compilation will fail if SENSOR_ID is not a valid 4-digit hexadecimal number
 const fn get_id() -> (u16, [u8; 4]) {
@@ -26,7 +29,7 @@ const fn get_id() -> (u16, [u8; 4]) {
         let digit = match byte {
             b'0'..=b'9' => *byte - b'0',
             b'a'..=b'f' => *byte - b'a' + 10,
-            b'F'..=b'F' => *byte - b'A' + 10,
+            b'A'..=b'F' => *byte - b'A' + 10,
             _ => panic!("Environment variable SENSOR_ID is not a valid hex number")
         };
         res = (res * 16) + digit as u16;
@@ -61,6 +64,9 @@ pub struct Peripherals {
 impl Peripherals {
     pub fn new(mut p: pac::Peripherals, core: &mut cortex_m::Peripherals, dma_buffer: &'static mut [i16]) -> Result<Self, SetupError>
     {
+        // TODO: Understand these better
+        core.SCB.set_sleepdeep();
+        core.SCB.set_sleeponexit();
         setup_interrupt_priority(core);
         p.POWER.dcdcen.write(|w| w.dcdcen().set_bit());
 
@@ -100,9 +106,8 @@ impl Peripherals {
     ///  - Between RTC1.Compare0 and RTC1.Compare1 (Normally exactly 1s), count the pulses from the probe
     fn setup_ppi(&mut self)
     {
-        // TODO: Delete this!
-        //  Use Compare3 to trigger early Overflow
-        {
+
+        if SHORT_SLEEP {
             // PPI channel 16 is the last I can use
             let ppi = &mut self.ppi.ppi16;
             ppi.set_event_endpoint(&self.rtc.events_compare[3]);
@@ -138,6 +143,14 @@ impl Peripherals {
             ppi.enable();
         }
 
+        // As soon as ADC sample is ready, disable it
+        {
+            let ppi = &mut self.ppi.ppi3;
+            ppi.set_event_endpoint(&self.adc.events_end);
+            ppi.set_task_endpoint(&self.adc.tasks_stop);
+            ppi.enable();
+        }
+
         // On RTC Compare0, clear the counter
         {
             let ppi = &mut self.ppi.ppi4;
@@ -163,6 +176,7 @@ impl Peripherals {
     }
 
     pub fn reset_adc_event(&self) {
+        // self.adc.t
         self.adc.events_end.reset();
     }
 
@@ -236,7 +250,7 @@ fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals) -> Result<pac::
     rtc1.set_compare(rtc::RtcCompareReg::Compare1, ONE_SECOND + QUARTER_SECOND)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare1);
 
-    rtc1.set_compare(rtc::RtcCompareReg::Compare3, ONE_SECOND * 30)?;
+    rtc1.set_compare(rtc::RtcCompareReg::Compare3, ONE_SECOND * DEBUG_SLEEP_SECONDS)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare3);
     rtc1.enable_interrupt(rtc::RtcInterrupt::Compare1, Some(&mut core.NVIC));
     rtc1.enable_event(rtc::RtcInterrupt::Overflow);
