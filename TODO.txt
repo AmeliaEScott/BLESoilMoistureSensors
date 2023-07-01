@@ -1,0 +1,15 @@
+
+- Breakout Board
+  - Use keyed ribbon cable connector for debug probe
+    - Check layout of pins! Don't repeat previous mistakes :)
+  - Add registration holes for a 3d-printed shroud for positioning the sensor
+  - Silkscreen for approximate sensor outline
+  - Add a through-hole resistor (And diode?) and button/switch for charging, and discharging, the capacitor
+    - Diode pointing from external power to Vcap (Need to draw out the circuit to check if it would work)
+  - Add breakout for measuring current on sensor without capacitor populated
+  - Add breakout for easier cap voltage measuring
+  - Reset button
+- Sensor
+  - Use proper energy harvesting IC
+  - Breakout current measuring pins
+    - Maybe use one of those cut-away fuse thingies, so by default it's just shorted
