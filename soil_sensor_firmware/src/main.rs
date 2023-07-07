@@ -62,6 +62,13 @@ mod app {
         p.RADIO.tasks_stop.write(|w| w.tasks_stop().set_bit());
         p.RADIO.tasks_disable.write(|w| w.tasks_disable().set_bit());
 
+        p.TIMER0.tasks_stop.write(|w| w.tasks_stop().set_bit());
+        p.TIMER1.tasks_stop.write(|w| w.tasks_stop().set_bit());
+        p.TIMER2.tasks_stop.write(|w| w.tasks_stop().set_bit());
+        p.TIMER0.tasks_shutdown.write(|w| w.tasks_shutdown().set_bit());
+        p.TIMER1.tasks_shutdown.write(|w| w.tasks_shutdown().set_bit());
+        p.TIMER2.tasks_shutdown.write(|w| w.tasks_shutdown().set_bit());
+
         (
             Shared {},
             Local { p }
@@ -75,8 +82,8 @@ mod app {
         loop {
             defmt::info!("Idle");
             // When using WFI, high power usage (~0.1mA - 1mA)
-            // rtic::export::wfi();
-            cortex_m::asm::wfe();
+            rtic::export::wfi();
+            // cortex_m::asm::wfe();
             // When using System OFF mode, low power usage (~0.001mA)
             // cx.local.p.POWER.systemoff.write(|w| w.systemoff().variant(SYSTEMOFF_AW::ENTER));
         }
