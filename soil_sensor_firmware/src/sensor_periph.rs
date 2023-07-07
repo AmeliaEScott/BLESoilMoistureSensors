@@ -11,8 +11,8 @@ use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 use soil_sensor_common::Measurement;
 use void::ResultVoidExt;
 
-const DEBUG_SLEEP_SECONDS: u32 = 60;
-const SHORT_SLEEP: bool = false;
+const DEBUG_SLEEP_SECONDS: u32 = 12;
+const SHORT_SLEEP: bool = true;
 
 /// Statically parse the string from environment variable "SENSOR_ID" into a u16.
 /// Compilation will fail if SENSOR_ID is not a valid 4-digit hexadecimal number
@@ -82,6 +82,7 @@ impl Peripherals {
         let gpiote = setup_gpiote(&probe_signal, p.GPIOTE);
         setup_counter(&mut p.TIMER1);
         setup_adc(&mut p.SAADC, dma_buffer);
+        enable_reset(&mut p.NVMC, &mut p.UICR);
         let ppi = ppi::Parts::new(p.PPI);
 
         let mut peripherals = Self {
@@ -363,4 +364,18 @@ fn setup_adc(adc: &mut pac::SAADC, dma_buffer: &mut [i16])
         w.end().set_bit()
     });
     adc.enable.write(|w| w.enable().set_bit() );
+}
+
+fn enable_reset(nvmc: &mut pac::NVMC, uicr: &mut pac::UICR) {
+    nvmc.config.write(|w| w.wen().variant(pac::nvmc::config::WEN_A::WEN));
+    nvmc.eraseuicr.write(|w| w.eraseuicr().set_bit());
+    while !nvmc.ready.read().ready().bit() {}
+    // p.UICR.pselreset[0].write(|w| w.pin().variant(21).connect().variant(CONNECT_A::CONNECTED));
+    uicr.pselreset[0].write(|w| unsafe{w.bits(0b01111111_11111111_11111111_11010101)});
+    while !nvmc.ready.read().ready().bit() {}
+    // p.UICR.pselreset[1].write(|w| w.pin().variant(21).connect().variant(CONNECT_A::CONNECTED));
+    uicr.pselreset[1].write(|w| unsafe{w.bits(0b01111111_11111111_11111111_11010101)});
+    while !nvmc.ready.read().ready().bit() {}
+    nvmc.config.write(|w| w.wen().variant(pac::nvmc::config::WEN_A::REN));
+    while !nvmc.ready.read().ready().bit() {}
 }
