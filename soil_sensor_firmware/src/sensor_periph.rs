@@ -311,6 +311,8 @@ fn setup_gpio(p0: pac::P0) -> (gpio::Pin<Output<PushPull>>, gpio::Pin<Input<Pull
     let probe_input = p0.p0_31
         .into_pulldown_input() // TODO: Test as floating?
         .degrade();
+    
+    let reset = p0.p0_21.into_pullup_input().degrade();
 
     (probe_enable, probe_input)
 }
