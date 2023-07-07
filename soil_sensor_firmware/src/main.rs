@@ -59,6 +59,9 @@ mod app {
         p.CLOCK.lfclksrc.write(|w| w.src().variant(SRC_A::XTAL).external().variant(EXTERNAL_A::DISABLED).bypass().variant(BYPASS_A::DISABLED));
         p.CLOCK.tasks_hfclkstart.write(|w| w.tasks_hfclkstart().set_bit());
 
+        p.RADIO.tasks_stop.write(|w| w.tasks_stop().set_bit());
+        p.RADIO.tasks_disable.write(|w| w.tasks_disable().set_bit());
+
         (
             Shared {},
             Local { p }
@@ -69,12 +72,11 @@ mod app {
     fn idle(cx: idle::Context) -> ! {
         let p: &mut pac::Peripherals = cx.local.p;
 
-
-
         loop {
             defmt::info!("Idle");
             // When using WFI, high power usage (~0.1mA - 1mA)
-            rtic::export::wfi();
+            // rtic::export::wfi();
+            cortex_m::asm::wfe();
             // When using System OFF mode, low power usage (~0.001mA)
             // cx.local.p.POWER.systemoff.write(|w| w.systemoff().variant(SYSTEMOFF_AW::ENTER));
         }
