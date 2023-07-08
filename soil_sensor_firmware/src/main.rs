@@ -69,6 +69,9 @@ mod app {
         p.TIMER1.tasks_shutdown.write(|w| w.tasks_shutdown().set_bit());
         p.TIMER2.tasks_shutdown.write(|w| w.tasks_shutdown().set_bit());
 
+        fix_sleep_errata();
+        fix_adc_errata();
+
         (
             Shared {},
             Local { p }
@@ -87,5 +90,36 @@ mod app {
             // When using System OFF mode, low power usage (~0.001mA)
             // cx.local.p.POWER.systemoff.write(|w| w.systemoff().variant(SYSTEMOFF_AW::ENTER));
         }
+    }
+}
+
+
+/// This will reset the SAADC.
+/// https://infocenter.nordicsemi.com/topic/errata_nRF52810_Rev2/ERR/nRF52810/Rev2/latest/anomaly_810_241.html#anomaly_810_241
+fn fix_adc_errata() {
+    unsafe {
+        let ptr_a = 0x40007640usize as *mut u32;
+        let ptr_b = 0x40007644usize as *mut u32;
+        let ptr_c = 0x40007648usize as *mut u32;
+
+        let a = ptr_a.read_volatile();
+        let b = ptr_b.read_volatile();
+        let c = ptr_c.read_volatile();
+
+        let ptr_d = 0x40007FFCusize as *mut u32;
+        ptr_d.write_volatile(0);
+        ptr_d.write_volatile(1);
+
+        ptr_a.write_volatile(a);
+        ptr_b.write_volatile(b);
+        ptr_c.write_volatile(c);
+    }
+}
+
+/// https://infocenter.nordicsemi.com/topic/errata_nRF52810_Rev2/ERR/nRF52810/Rev2/latest/anomaly_810_246.html#anomaly_810_246
+fn fix_sleep_errata() {
+    unsafe {
+        let ptr = 0x4007AC84usize as *mut u32;
+        ptr.write_volatile(2);
     }
 }
