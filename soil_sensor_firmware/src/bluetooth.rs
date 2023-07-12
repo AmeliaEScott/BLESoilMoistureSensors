@@ -72,8 +72,9 @@ impl SensorBluetooth {
     }
 
     // TODO: Documentation
-    pub async fn advertise(&self) -> Result<ble::Connection, peripheral::AdvertiseError> {
-        let adv_data = &[
+    pub async fn advertise(&self, measurement: &Measurement) -> Result<(), peripheral::AdvertiseError> {
+
+        let adv_data = [
             // Flags
             0x02, 0x01, raw::BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE as u8,
             // Complete list of 16-bit service class UUIDs
@@ -83,12 +84,10 @@ impl SensorBluetooth {
             b'S', b'e', b'n', b's', b'o', b'r', b' ', ID[0], ID[1], ID[2], ID[3],
         ];
 
-        let scan_data = &[
-            0x03, 0x03, 0x09, 0x18,
-            // Complete list of 128-bit Service UUIDs (Just the one service)
-            0x11, 0x07, 0x57, 0x82, 0x0e, 0x45, 0x57, 0x74, 0x76, 0x99, 0xcc,
-            0x47, 0x61, 0xa7, 0x27, 0x56, 0x6a, 0x86
+        let mut scan_data = [
+            17, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         ];
+        scan_data[4..18].copy_from_slice(measurement.to_bytes().as_slice());
 
         let config = peripheral::Config{
             // 10 seconds
@@ -103,8 +102,8 @@ impl SensorBluetooth {
             filter_policy: peripheral::FilterPolicy::Any,
             ..peripheral::Config::default()
         };
-        let adv = peripheral::ConnectableAdvertisement::ScannableUndirected { adv_data, scan_data };
-        let conn = peripheral::advertise_connectable(self.sd, adv, &config).await?;
+        let adv = peripheral::NonconnectableAdvertisement::ScannableUndirected { adv_data: &adv_data, scan_data: &scan_data };
+        let conn = peripheral::advertise(self.sd, adv, &config).await?;
         Ok(conn)
     }
 

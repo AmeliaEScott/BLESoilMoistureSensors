@@ -140,64 +140,27 @@ mod app {
         let receiver: &mut Receiver<'static, Measurement, 1> = &mut cx.local.measurements_r;
         softdevice_runner::spawn().unwrap();
 
-        // This async function will loop forever, waiting for new Measurements and sending
-        // them out over BLE.
-        // When the connection is closed, the future should be dropped, which will stop this
-        // infinite loop.
-        //
-        // The function will first immediately publish `init_meas` on BLE, then start waiting
-        // for the next measurement.
-        async fn wait_for_measurements(init_meas: Measurement, receiver: &mut Receiver<'static, Measurement, 1>, bt: &bluetooth::SensorBluetooth, conn: &ble::Connection) -> ! {
-            bt.notify(conn, init_meas).unwrap_or_else(|err| {
-                warn!("[ble_service.wait_for_measurements] NotifyValueError {}", err)
-            });
-
-            loop {
-                let r: Result<(), defmt::Str> = try {
-                    let meas = receiver.recv().await.or(Err(intern!("ReceiveError")))?;
-                    bt.notify(conn, meas).unwrap_or_else(|err| {
-                        warn!("[ble_service.wait_for_measurements] NotifyValueError {}", err)
-                    });
-                };
-                debug!("[ble_service.wait_for_measurements] Result in wait_for_measurements: {}", r);
-            }
-        }
-
-        // Endless loop, which does the following:
-        //  - Immediately wait for a Measurement (to make sure we spend most time asleep)
-        //  - BLE Advertise once. If no connection is made, return to start of loop and wait again
-        //  - Create two concurrent async tasks:
-        //    - gatt_server::run(...): Handles events from BLE
-        //    - wait_for_measurements: Waits for measurements and publishes them on BLE
-        //  - Wait for either task to finish.
-        //    - if gatt_server::run() finishes, that means the central disconnected
-        //    - if wait_for_measurements() finishes, something has gone horribly wrong (Should never happen)
-        //  - Return to start of loop (Wait for a new Measurement)
         loop {
-            let r: Result<(), defmt::Str> = try {
-                // Start with waiting. Save `init_meas` because we don't want to throw away any
-                // measurements, if we end up successfully establishing a connection.
-                debug!("[ble_service] Waiting for Measurement...");
-                let init_meas = receiver.recv().await.or(Err(intern!("ReceiveError")))?;
-                debug!("[ble_service] Advertising...");
-                // Advertise for ~10 seconds. If this fails, go back to sleep and wait for the next
-                // Measurement. We don't want to continuously advertise, because this uses a lot
-                // of power.
-                let conn = bt.advertise().await.or(Err(intern!("Advertise timed out")))?;
+            let result = receiver.recv().await;
+            if let Ok(meas) = result {
+                unsafe {
+                    let mut r: u32 = 0;
+                    nrf_softdevice::raw::sd_clock_hfclk_is_running(&mut r as *mut u32);
+                    defmt::info!("HFCLK running: {}", r);
+                }
 
-                // Because measurements only happen ~1 / day, we don't want the bridge to miss
-                // the first measurement after connecting. This delay gives the bridge time to
-                // subscribe to measurement notifications.
-                // TODO: Instead of a blind delay, try getting the actual status of
-                //  notification subscription
-                Timer2::delay(5000.millis()).await;
-                // select_biased! will return an Err. Should be "Connection broken", and never the unreachable branch
-                select_biased! {
-                    _ = wait_for_measurements(init_meas, receiver, &bt, &conn).fuse() => Err(intern!("Should be unreachable")),
-                    _ = bt.run_server(&conn).fuse() => Err(intern!("Connection broken"))
-                }?;
-            };
-            debug!("[ble_service] Result from adv + select: {}", r);
+                let adv_result = bt.advertise(&meas).await;
+                unsafe {
+                    let mut r: u32 = 0;
+                    nrf_softdevice::raw::sd_clock_hfclk_is_running(&mut r as *mut u32);
+                    defmt::info!("HFCLK running: {}", r);
+                }
+                if adv_result.is_err() {
+                    defmt::error!("Error advertising data: {}", adv_result);
+                }
+            } else {
+                defmt::error!("Error receiving from channel");
+            }
         }
     }
 }

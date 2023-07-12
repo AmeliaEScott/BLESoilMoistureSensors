@@ -11,7 +11,7 @@ use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 use soil_sensor_common::Measurement;
 use void::ResultVoidExt;
 
-const DEBUG_SLEEP_SECONDS: u32 = 12;
+const DEBUG_SLEEP_SECONDS: u32 = 30;
 const SHORT_SLEEP: bool = true;
 
 /// Statically parse the string from environment variable "SENSOR_ID" into a u16.
@@ -272,7 +272,7 @@ fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals) -> Result<pac::
 ///
 /// I think the Softdevice might do all of this anyway, but better safe than sorry!
 fn setup_clocks(clocks: pac::CLOCK)
-                    -> clocks::Clocks<clocks::ExternalOscillator, clocks::ExternalOscillator, clocks::LfOscStarted>
+                    -> clocks::Clocks<clocks::Internal, clocks::ExternalOscillator, clocks::LfOscStarted>
 {
     // NoExternalNoBypass does NOT mean "No external oscillator": It means no external signal
     // provided to the external oscillator. Normal operation (with the circuit I am using,
@@ -280,7 +280,6 @@ fn setup_clocks(clocks: pac::CLOCK)
     // See Table 16 on Page 87 of the NRF52810 datasheet.
     clocks::Clocks::new(clocks)
         .set_lfclk_src_external(clocks::LfOscConfiguration::NoExternalNoBypass)
-        .enable_ext_hfosc()
         .start_lfclk()
 }
 
