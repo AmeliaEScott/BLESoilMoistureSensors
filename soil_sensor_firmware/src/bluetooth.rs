@@ -91,7 +91,7 @@ impl SensorBluetooth {
 
         let config = peripheral::Config{
             // 10 seconds
-            timeout: Some(1000),
+            timeout: Some(100),
             // TODO: Experiment with interval, test power usage
             //   Too long of an interval seems to make it difficult for the bridge to connect
             //   (At least from my Linux desktop. My phone has no problem with the 1-second

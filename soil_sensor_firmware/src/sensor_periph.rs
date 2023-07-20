@@ -11,7 +11,7 @@ use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 use soil_sensor_common::Measurement;
 use void::ResultVoidExt;
 
-const DEBUG_SLEEP_SECONDS: u32 = 30;
+const DEBUG_SLEEP_SECONDS: u32 = 10;
 const SHORT_SLEEP: bool = true;
 
 /// Statically parse the string from environment variable "SENSOR_ID" into a u16.
