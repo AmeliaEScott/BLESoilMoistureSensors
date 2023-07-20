@@ -31,7 +31,6 @@ pub const ADC_MEASUREMENT_THRESHOLD: i16 = 0;
 mod app {
     use nrf_softdevice::ble;
     use rtic_sync::{channel::*, make_channel};
-    use rtic_monotonics::nrf::timer::{Timer2, ExtU64};
     use super::*;
 
     #[shared]

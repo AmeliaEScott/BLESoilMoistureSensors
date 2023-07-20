@@ -70,13 +70,6 @@ impl Peripherals {
         setup_interrupt_priority(core);
         p.POWER.dcdcen.write(|w| w.dcdcen().set_bit());
 
-        // Use Timer2 for delay in rtic software tasks.
-        // Systic I think won't work when the CPU is asleep (which should be most of the time),
-        // so we need to use a peripheral. Timer2 is the only one available.
-        // TODO: Does this use power???
-        let token = rtic_monotonics::create_nrf_timer2_monotonic_token!();
-        rtic_monotonics::nrf::timer::Timer2::start(p.TIMER2, token);
-
         let rtc = setup_rtc1(p.RTC1, core)?;
         setup_clocks(p.CLOCK);
         let (probe_enable, probe_signal) = setup_gpio(p.P0);
@@ -86,7 +79,6 @@ impl Peripherals {
         p.TIMER1.tasks_shutdown.write(|w| w.tasks_shutdown().set_bit());
         setup_adc(&mut p.SAADC, dma_buffer);
         enable_reset(&mut p.NVMC, &mut p.UICR);
-        fix_sleep_errata();
         let ppi = ppi::Parts::new(p.PPI);
 
         let mut peripherals = Self {
@@ -184,7 +176,6 @@ impl Peripherals {
         // self.adc.t
         self.adc.events_end.reset();
 
-        fix_adc_errata();
         setup_adc(&mut self.adc, self.adc_buffer);
     }
 
@@ -386,34 +377,4 @@ fn enable_reset(nvmc: &mut pac::NVMC, uicr: &mut pac::UICR) {
     while !nvmc.ready.read().ready().bit() {}
     nvmc.config.write(|w| w.wen().variant(pac::nvmc::config::WEN_A::REN));
     while !nvmc.ready.read().ready().bit() {}
-}
-
-/// This will reset the SAADC.
-/// https://infocenter.nordicsemi.com/topic/errata_nRF52810_Rev2/ERR/nRF52810/Rev2/latest/anomaly_810_241.html#anomaly_810_241
-fn fix_adc_errata() {
-    unsafe {
-        let ptr_a = 0x40007640usize as *mut u32;
-        let ptr_b = 0x40007644usize as *mut u32;
-        let ptr_c = 0x40007648usize as *mut u32;
-
-        let a = ptr_a.read_volatile();
-        let b = ptr_b.read_volatile();
-        let c = ptr_c.read_volatile();
-
-        let ptr_d = 0x40007FFCusize as *mut u32;
-        ptr_d.write_volatile(0);
-        ptr_d.write_volatile(1);
-
-        ptr_a.write_volatile(a);
-        ptr_b.write_volatile(b);
-        ptr_c.write_volatile(c);
-    }
-}
-
-/// https://infocenter.nordicsemi.com/topic/errata_nRF52810_Rev2/ERR/nRF52810/Rev2/latest/anomaly_810_246.html#anomaly_810_246
-fn fix_sleep_errata() {
-    unsafe {
-        let ptr = 0x4007AC84usize as *mut u32;
-        ptr.write_volatile(2);
-    }
 }
