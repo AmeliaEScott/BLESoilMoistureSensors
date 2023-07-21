@@ -23,4 +23,4 @@ rrb = "run --release --bin"
 bbr = "build --release --bin"
 
 [env]
-SENSOR_ID = "ABCD"
+SENSOR_ID = "AAAA"

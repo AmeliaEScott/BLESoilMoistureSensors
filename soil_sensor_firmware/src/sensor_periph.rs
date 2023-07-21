@@ -249,7 +249,9 @@ fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals) -> Result<pac::
     rtc1.set_compare(rtc::RtcCompareReg::Compare1, ONE_SECOND + QUARTER_SECOND)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare1);
 
-    rtc1.set_compare(rtc::RtcCompareReg::Compare3, ONE_SECOND * DEBUG_SLEEP_SECONDS)?;
+    // The "Trigger Overflow" task sets the register to (Overflow - 0x0F), so to get the sleep
+    // duration exactly right, subtract that 0x0F here.
+    rtc1.set_compare(rtc::RtcCompareReg::Compare3, (ONE_SECOND * DEBUG_SLEEP_SECONDS) - 0x0F)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare3);
     rtc1.enable_interrupt(rtc::RtcInterrupt::Compare1, Some(&mut core.NVIC));
     rtc1.enable_event(rtc::RtcInterrupt::Overflow);

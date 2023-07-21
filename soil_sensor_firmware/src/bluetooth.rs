@@ -3,7 +3,7 @@ use nrf_softdevice::{ble, raw, Softdevice};
 use core::mem;
 use defmt::debug;
 use nrf_softdevice::ble::gatt_server::NotifyValueError;
-use soil_sensor_common::{Measurement, Serialized};
+use soil_sensor_common::{Measurement, Serialized, COMPANY_ID_CODE};
 use crate::sensor_periph::{SENSOR_ID_BYTES as ID, SENSOR_ID_BYTES};
 
 // TODO: Surely there's a more elegant way to do this...
@@ -85,9 +85,9 @@ impl SensorBluetooth {
         ];
 
         let mut scan_data = [
-            17, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            17, 0xFF, COMPANY_ID_CODE[0], COMPANY_ID_CODE[1], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         ];
-        scan_data[4..18].copy_from_slice(measurement.to_bytes().as_slice());
+        scan_data[4..].copy_from_slice(measurement.to_bytes().as_slice());
 
         let config = peripheral::Config{
             // 10 seconds
