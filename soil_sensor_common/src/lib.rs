@@ -1,9 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(feature = "full")]
+pub mod web;
+
 #[cfg(feature = "defmt")]
 use defmt::Format;
 
 #[cfg_attr(feature = "defmt", derive(Format))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Measurement {
     pub id: u16,
@@ -14,6 +18,8 @@ pub struct Measurement {
 }
 
 pub type Serialized = [u8; 14];
+
+pub const COMPANY_ID_CODE: [u8; 2] = [0xFF, 0xFF];
 
 impl Measurement {
     pub fn to_bytes(&self) -> Serialized {

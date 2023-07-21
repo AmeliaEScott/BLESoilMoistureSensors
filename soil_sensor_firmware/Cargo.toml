@@ -32,7 +32,7 @@ nrf-softdevice-s112 = { git = "https://github.com/embassy-rs/nrf-softdevice.git"
 futures = { version = "0.3", default-features = false, features = ["async-await"] }
 void = { version = "1.0", default-features = false }
 
-soil_sensor_common = { path = "../soil_sensor_common", default-features = false, features = ["defmt"] }
+soil_sensor_common = { path = "../soil_sensor_common", default-features = false, features = ["embedded"] }
 
 # Enhanced Shockburst; ie Nordic's proprietary RF protocol. Fast ramp-up enabled.
 #esb = { git = "https://github.com/thalesfragoso/esb", branch = "master", features = ["52810", "fast-ru"] }

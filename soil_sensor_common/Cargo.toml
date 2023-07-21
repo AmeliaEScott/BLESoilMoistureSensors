@@ -4,11 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["std"]
+embedded = ["defmt"]
+full = ["std", "serde", "dep:time"]
 defmt = ["dep:defmt"]
 std = []
+serde = ["dep:serde"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 defmt = { version = "0.3", optional = true }
+serde = { version = "1.0", optional = true }
+time = { version = "0.3", features = ["serde", "std", "local-offset", "formatting", "parsing"], optional = true }

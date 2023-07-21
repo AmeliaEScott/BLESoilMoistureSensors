@@ -16,20 +16,17 @@ use nrf52810_hal as hal;
 use hal::pac;
 
 use nrf_softdevice::Softdevice;
-use defmt::{trace, debug, info, warn, intern};
+use defmt::{trace, debug, info, warn, error};
 
 use soil_sensor_common::Measurement;
 
-use futures::future::FutureExt;
-use futures::select_biased;
-
 // TODO: Find the right value for this
 //  Also maybe find a better place to put it?
-pub const ADC_MEASUREMENT_THRESHOLD: i16 = 0;
+pub const ADC_MEASUREMENT_THRESHOLD: i16 = -10000;
 
 #[app(device = pac, peripherals = false, dispatchers = [SWI3])]
 mod app {
-    use nrf_softdevice::ble;
+    use nrf_softdevice::ble::peripheral::AdvertiseError;
     use rtic_sync::{channel::*, make_channel};
     use super::*;
 
@@ -73,7 +70,7 @@ mod app {
     }
 
     #[idle]
-    fn idle(cx: idle::Context) -> ! {
+    fn idle(_: idle::Context) -> ! {
         loop {
             trace!("Idle");
             unsafe {
@@ -145,20 +142,22 @@ mod app {
                 unsafe {
                     let mut r: u32 = 0;
                     nrf_softdevice::raw::sd_clock_hfclk_is_running(&mut r as *mut u32);
-                    defmt::info!("HFCLK running: {}", r);
+                    debug!("HFCLK running: {}", r);
                 }
 
                 let adv_result = bt.advertise(&meas).await;
                 unsafe {
                     let mut r: u32 = 0;
                     nrf_softdevice::raw::sd_clock_hfclk_is_running(&mut r as *mut u32);
-                    defmt::info!("HFCLK running: {}", r);
+                    debug!("HFCLK running: {}", r);
                 }
-                if adv_result.is_err() {
-                    defmt::error!("Error advertising data: {}", adv_result);
+                if let Err(AdvertiseError::Timeout) = adv_result {
+                    debug!("Got expected advertise timeout: {}", adv_result);
+                } else {
+                    warn!("Unexpected advertising result: {}", adv_result);
                 }
             } else {
-                defmt::error!("Error receiving from channel");
+                error!("Error receiving from channel");
             }
         }
     }

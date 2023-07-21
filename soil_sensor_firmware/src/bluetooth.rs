@@ -1,8 +1,7 @@
 use nrf_softdevice::ble::{gatt_server, peripheral};
-use nrf_softdevice::{ble, raw, Softdevice};
+use nrf_softdevice::{raw, Softdevice};
 use core::mem;
 use defmt::debug;
-use nrf_softdevice::ble::gatt_server::NotifyValueError;
 use soil_sensor_common::{Measurement, Serialized, COMPANY_ID_CODE};
 use crate::sensor_periph::{SENSOR_ID_BYTES as ID, SENSOR_ID_BYTES};
 
@@ -13,20 +12,9 @@ const GAP_NAME: [u8; 20] = [
     SENSOR_ID_BYTES[0], SENSOR_ID_BYTES[1], SENSOR_ID_BYTES[2], SENSOR_ID_BYTES[3]
 ];
 
-#[nrf_softdevice::gatt_service(uuid = "866a5627-a761-47cc-9976-7457450e8257")]
-pub struct MoistureSensorService {
-    #[characteristic(uuid = "866a5627-a761-47cc-9976-7457450e8258", notify)]
-    measurement: Serialized
-}
-
-#[nrf_softdevice::gatt_server]
-pub struct Server {
-    srv: MoistureSensorService,
-}
 
 pub struct SensorBluetooth {
     pub sd: &'static Softdevice,
-    pub server: Server,
 }
 
 impl SensorBluetooth {
@@ -46,7 +34,7 @@ impl SensorBluetooth {
                 event_length: 24,
             }),
             conn_gatt: Some(raw::ble_gatt_conn_cfg_t { att_mtu: 256 }),
-            gatts_attr_tab_size: Some(raw::ble_gatts_cfg_attr_tab_size_t { attr_tab_size: 4096 }),
+            gatts_attr_tab_size: Some(raw::ble_gatts_cfg_attr_tab_size_t { attr_tab_size: 256 }),
             gap_role_count: Some(raw::ble_gap_cfg_role_count_t {
                 adv_set_count: 1,
                 periph_role_count: 1,
@@ -63,11 +51,9 @@ impl SensorBluetooth {
 
         debug!("Enabling Softdevice");
         let sd = Softdevice::enable(&config);
-        debug!("Creating server");
-        let server = Server::new(sd)?;
 
         Ok(Self {
-            sd, server,
+            sd,
         })
     }
 
@@ -90,31 +76,16 @@ impl SensorBluetooth {
         scan_data[4..].copy_from_slice(measurement.to_bytes().as_slice());
 
         let config = peripheral::Config{
-            // 10 seconds
-            timeout: Some(100),
-            // TODO: Experiment with interval, test power usage
-            //   Too long of an interval seems to make it difficult for the bridge to connect
-            //   (At least from my Linux desktop. My phone has no problem with the 1-second
-            //   interval! Maybe I need to configure a timeout somewhere...)
-            // 1 second. Documentation says this is units of 0.625uS, but it is actually 0.625mS
-            // interval: 1600,
-            interval: 400,
+            // 2 seconds
+            timeout: Some(200),
+            // TODO: Experiment with interval / number of advertisements, test power usage
+            // 0.1 second. Documentation says this is units of 0.625uS, but it is actually 0.625mS
+            interval: 160,
             filter_policy: peripheral::FilterPolicy::Any,
             ..peripheral::Config::default()
         };
         let adv = peripheral::NonconnectableAdvertisement::ScannableUndirected { adv_data: &adv_data, scan_data: &scan_data };
         let conn = peripheral::advertise(self.sd, adv, &config).await?;
         Ok(conn)
-    }
-
-    // TODO: Documentation
-    // TODO: Change to array of bytes (Serialize Measurement)
-    pub fn notify(&self, conn: &ble::Connection, meas: Measurement) -> Result<(), NotifyValueError> {
-        self.server.srv.measurement_notify(conn, &meas.to_bytes())
-    }
-
-    pub async fn run_server(&self, conn: &ble::Connection) -> ble::DisconnectedError {
-        let err = gatt_server::run(conn, &self.server, |_| {}).await;
-        err
     }
 }

@@ -2,7 +2,7 @@ use cortex_m;
 use thiserror_no_std::Error;
 
 use nrf52810_hal::{rtc, gpio, gpiote, ppi, ppi::Ppi, pac, clocks};
-use gpio::{Input, Output, PullDown, PushPull};
+use gpio::{Input, Output, PullDown, PushPull, PullUp};
 use nrf52810_hal::pac::rtc0::tasks_trigovrflw::TASKS_TRIGOVRFLW_AW;
 use nrf52810_hal::pac::saadc::{resolution, oversample, ch::{pselp, config as adc_config}};
 use nrf52810_hal::prelude::{ConfigurablePpi, OutputPin};
@@ -51,6 +51,8 @@ pub struct Peripherals {
     probe_enable: gpio::Pin<Output<PushPull>>,
     #[allow(dead_code)]
     probe_signal: gpio::Pin<Input<PullDown>>,
+    #[allow(dead_code)]
+    reset_pin: gpio::Pin<Input<PullUp>>,
     gpiote: gpiote::Gpiote,
     counter: pac::TIMER1,
     adc: pac::SAADC,
@@ -72,7 +74,7 @@ impl Peripherals {
 
         let rtc = setup_rtc1(p.RTC1, core)?;
         setup_clocks(p.CLOCK);
-        let (probe_enable, probe_signal) = setup_gpio(p.P0);
+        let (probe_enable, probe_signal, reset_pin) = setup_gpio(p.P0);
         let gpiote = setup_gpiote(&probe_signal, p.GPIOTE);
         setup_counter(&mut p.TIMER1);
         p.TIMER1.tasks_stop.write(|w| w.tasks_stop().set_bit());
@@ -82,7 +84,7 @@ impl Peripherals {
         let ppi = ppi::Parts::new(p.PPI);
 
         let mut peripherals = Self {
-            rtc, probe_enable, probe_signal, gpiote,
+            rtc, probe_enable, probe_signal, reset_pin, gpiote,
             counter: p.TIMER1,
             adc: p.SAADC,
             adc_buffer: dma_buffer,
@@ -297,7 +299,8 @@ fn setup_interrupt_priority(core: &mut cortex_m::Peripherals)
 /// Configure 2 pins:
 ///  - P0_30: Push-pull output to enable / disable moisture probe oscillator
 ///  - P0_31: PullDown input to read signal from moisture probe oscillator
-fn setup_gpio(p0: pac::P0) -> (gpio::Pin<Output<PushPull>>, gpio::Pin<Input<PullDown>>)
+fn setup_gpio(p0: pac::P0)
+    -> (gpio::Pin<Output<PushPull>>, gpio::Pin<Input<PullDown>>, gpio::Pin<Input<PullUp>>)
 {
     // Configure probe enable output pin
     let p0 = gpio::p0::Parts::new(p0);
@@ -313,7 +316,7 @@ fn setup_gpio(p0: pac::P0) -> (gpio::Pin<Output<PushPull>>, gpio::Pin<Input<Pull
 
     let reset = p0.p0_21.into_pullup_input().degrade();
 
-    (probe_enable, probe_input)
+    (probe_enable, probe_input, reset)
 }
 
 /// Configure GPIOTE (GPIO Tasks and Events) to output an event for a rising edge from

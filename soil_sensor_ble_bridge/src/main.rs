@@ -1,14 +1,11 @@
 #![feature(try_blocks)]
 
 use bluer;
-use std::error::Error;
-use uuid::Uuid;
-use log::{debug, info, warn, error};
-use serde::{Serialize, Deserialize};
-use bluer::{Adapter, AdapterEvent, Address, Device, DeviceEvent, DeviceProperty, DiscoveryFilter, DiscoveryTransport};
-use futures::{pin_mut, stream::SelectAll, StreamExt};
-use std::{collections::HashSet, env};
+use log::{debug, info, warn};
+use bluer::{AdapterEvent, Address, Device, DeviceEvent, DeviceProperty, DiscoveryFilter, DiscoveryTransport};
+use futures::{pin_mut, StreamExt};
 use soil_sensor_common::Measurement;
+use soil_sensor_common::web::Request as MeasurementRequest;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> bluer::Result<()> {
@@ -65,7 +62,7 @@ pub async fn watch_device(device: Device) -> bluer::Result<()> {
         return Ok(())
     }
 
-    let mut last_meas: Option<soil_sensor_common::Measurement> = None;
+    let mut last_meas: Option<Measurement> = None;
 
     while let Some(event) = events.next().await {
         if let DeviceEvent::PropertyChanged(DeviceProperty::ManufacturerData(data)) = event {
@@ -75,7 +72,7 @@ pub async fn watch_device(device: Device) -> bluer::Result<()> {
                 let bytes = soil_sensor_common::Serialized::try_from(
                     bytes.as_slice())
                     .or(Err(format!("Error converting {:?} to Serialized", bytes)))?;
-                let measurement = Measurement::from_bytes(bytes, device.address().0);
+                let measurement = Measurement::from_bytes(bytes);
 
                 if Some(measurement) != last_meas {
                     tokio::spawn(handle_measurement(measurement, device.address()));
@@ -94,14 +91,14 @@ pub async fn watch_device(device: Device) -> bluer::Result<()> {
     Ok(())
 }
 
-pub async fn handle_measurement(meas: soil_sensor_common::Measurement, addr: Address) {
+pub async fn handle_measurement(meas: Measurement, addr: Address) {
     let now = time::OffsetDateTime::now_local().unwrap_or_else(|_|{
         time::OffsetDateTime::now_utc()
     });
 
-    let meas = Measurement {
+    let meas = MeasurementRequest {
         measurement: meas,
-        time: now,
+        timestamp: now,
         sensor_address: addr.0
     };
 
