@@ -11,8 +11,8 @@ use nrf52810_hal::pac::timer1::{bitmode as timer_bitmode, mode as timer_mode};
 use soil_sensor_common::Measurement;
 use void::ResultVoidExt;
 
-const DEBUG_SLEEP_SECONDS: u32 = 10;
-const SHORT_SLEEP: bool = true;
+// Sleep for 1 hour between measurements
+const SLEEP_SECONDS: u32 = 60 * 60;
 
 /// Statically parse the string from environment variable "SENSOR_ID" into a u16.
 /// Compilation will fail if SENSOR_ID is not a valid 4-digit hexadecimal number
@@ -106,7 +106,8 @@ impl Peripherals {
     fn setup_ppi(&mut self)
     {
 
-        if SHORT_SLEEP {
+        // Trigger overflow on Compare[3]
+        {
             // PPI channel 16 is the last I can use
             let ppi = &mut self.ppi.ppi16;
             ppi.set_event_endpoint(&self.rtc.events_compare[3]);
@@ -253,7 +254,7 @@ fn setup_rtc1(rtc1: pac::RTC1, core: &mut cortex_m::Peripherals) -> Result<pac::
 
     // The "Trigger Overflow" task sets the register to (Overflow - 0x0F), so to get the sleep
     // duration exactly right, subtract that 0x0F here.
-    rtc1.set_compare(rtc::RtcCompareReg::Compare3, (ONE_SECOND * DEBUG_SLEEP_SECONDS) - 0x0F)?;
+    rtc1.set_compare(rtc::RtcCompareReg::Compare3, (ONE_SECOND * SLEEP_SECONDS) - 0x0F)?;
     rtc1.enable_event(rtc::RtcInterrupt::Compare3);
     rtc1.enable_interrupt(rtc::RtcInterrupt::Compare1, Some(&mut core.NVIC));
     rtc1.enable_event(rtc::RtcInterrupt::Overflow);
