@@ -4,21 +4,39 @@ use bluer;
 use log::{debug, info, warn};
 use bluer::{AdapterEvent, Address, Device, DeviceEvent, DeviceProperty, DiscoveryFilter, DiscoveryTransport};
 use futures::{pin_mut, StreamExt};
+use futures::future::{select_all, FutureExt};
+use tokio::task::JoinHandle;
 use soil_sensor_common::Measurement;
 use soil_sensor_common::web::Request as MeasurementRequest;
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> bluer::Result<()> {
+async fn main() {
     pretty_env_logger::init();
 
-    let result = listen_adapter().await;
-    warn!("listen_adapter returned {:?}", result);
-    result
+    let session = bluer::Session::new().await.unwrap();
+    let adapter_names = session.adapter_names().await.unwrap();
+    let mut adapter_tasks: Vec<JoinHandle<bluer::Result<()>>> = adapter_names
+        .iter()
+        .filter_map(|adapter_name|{
+            if let Ok(adapter) = session.adapter(adapter_name) {
+                Some(tokio::spawn(listen_adapter(adapter)))
+            } else {
+                warn!("Failed to create adapter {}", adapter_name);
+                None
+            }
+        }).collect();
+
+    while adapter_tasks.len() > 0 {
+        let (result, _, remaining_tasks) =
+            select_all(adapter_tasks).await;
+        warn!("Result from adapter: {:?}", result);
+        adapter_tasks = remaining_tasks;
+    }
+
+    info!("All adapter listener tasks wrapped up. Exiting gracefully.");
 }
 
-async fn listen_adapter() -> bluer::Result<()> {
-    let session = bluer::Session::new().await?;
-    let adapter = session.default_adapter().await?;
+async fn listen_adapter(adapter: bluer::Adapter) -> bluer::Result<()> {
     debug!("Discovering devices using Bluetooth adapter {}\n", adapter.name());
     adapter.set_powered(true).await?;
 
@@ -87,6 +105,8 @@ pub async fn watch_device(device: Device) -> bluer::Result<()> {
                 device.address(), data, result);
         }
     }
+
+    info!("Stopped receiving events from {}. Not sure what this means.", name);
 
     Ok(())
 }
