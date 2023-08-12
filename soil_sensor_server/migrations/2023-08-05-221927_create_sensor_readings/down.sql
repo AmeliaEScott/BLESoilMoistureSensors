@@ -1,1 +1,2 @@
-DROP TABLE sensor_readings
+DROP TABLE measurements;
+DROP TABLE sensors

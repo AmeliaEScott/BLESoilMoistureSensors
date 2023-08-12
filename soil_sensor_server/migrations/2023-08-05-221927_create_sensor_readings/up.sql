@@ -1,10 +1,15 @@
-CREATE TABLE sensor_readings (
+CREATE TABLE sensors (
+    id INTEGER PRIMARY KEY,
+    hardware_address MACADDR NOT NULL,
+    description TEXT
+);
+
+CREATE TABLE measurements (
   id SERIAL PRIMARY KEY,
-  sensor_id INTEGER NOT NULL,
-  hardware_address MACADDR NOT NULL,
+  sensor_id INTEGER NOT NULL REFERENCES sensors (id),
   sequence INTEGER NOT NULL,
   moisture INTEGER NOT NULL,
   temperature FLOAT NOT NULL,
   capacitor_voltage FLOAT NOT NULL,
   time TIMESTAMP WITH TIME ZONE NOT NULL
-)
+);

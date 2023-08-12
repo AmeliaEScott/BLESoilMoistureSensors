@@ -1,6 +1,5 @@
 
-pub mod schema;
-pub mod models;
+pub mod database;
 
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
@@ -8,7 +7,7 @@ use dotenvy::dotenv;
 use std::env;
 use diesel::sql_types::Timestamptz;
 use time::OffsetDateTime;
-use crate::models::{NewReading, SensorReading};
+use crate::database::models::{NewReading, SensorReading};
 
 pub fn establish_connection() -> PgConnection {
     dotenv().ok();
@@ -19,7 +18,7 @@ pub fn establish_connection() -> PgConnection {
 }
 
 fn main() {
-    use self::schema::sensor_readings;
+    use self::database::schema::measurements;
 
     let connection = &mut establish_connection();
 
