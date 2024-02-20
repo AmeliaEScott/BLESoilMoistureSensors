@@ -15,6 +15,7 @@ diesel::table! {
 diesel::table! {
     sensors (id) {
         id -> Int4,
+        display_id -> Nullable<Int4>,
         hardware_address -> Macaddr,
         description -> Nullable<Text>,
     }

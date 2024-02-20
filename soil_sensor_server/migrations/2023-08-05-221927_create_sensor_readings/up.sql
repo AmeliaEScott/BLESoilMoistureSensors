@@ -1,5 +1,6 @@
 CREATE TABLE sensors (
-    id INTEGER PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
+    display_id INTEGER,
     hardware_address MACADDR NOT NULL,
     description TEXT
 );
