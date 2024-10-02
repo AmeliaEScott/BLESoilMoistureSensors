@@ -22,7 +22,8 @@ use soil_sensor_common::Measurement;
 
 // TODO: Find the right value for this
 //  Also maybe find a better place to put it?
-pub const ADC_MEASUREMENT_THRESHOLD: i16 = -10000;
+//  Currently set to 1V
+pub const ADC_MEASUREMENT_THRESHOLD: i16 = ((1.0 / 3.3) * 2i32.pow(14u32) as f64) as i16;
 
 #[app(device = pac, peripherals = false, dispatchers = [SWI3])]
 mod app {

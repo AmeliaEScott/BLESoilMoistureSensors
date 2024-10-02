@@ -4,14 +4,43 @@ use bluer;
 use log::{debug, info, warn};
 use bluer::{AdapterEvent, Address, Device, DeviceEvent, DeviceProperty, DiscoveryFilter, DiscoveryTransport};
 use futures::{pin_mut, StreamExt};
-use futures::future::{select_all, FutureExt};
+use futures::future::select_all;
 use tokio::task::JoinHandle;
 use soil_sensor_common::Measurement;
-use soil_sensor_common::web::Request as MeasurementRequest;
+use soil_sensor_common::web::InfluxDBMeasurement;
+use influxdb::{Client, Error, WriteQuery, InfluxDbWriteable};
+use clap::{Parser, Subcommand};
+
+#[derive(Debug, Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[command(subcommand)]
+    cmd: Commands
+}
+
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+enum Commands {
+    Test,
+    Run
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     pretty_env_logger::init();
+
+    let args = Args::parse();
+
+    if args.cmd == Commands::Test {
+        let fake_meas = Measurement {
+            id: 0x0123,
+            moisture_frequency: 6666,
+            temperature: 25 * 4,
+            capacitor_voltage: 4500,
+            sequence: 1
+        };
+        handle_measurement(fake_meas, bluer::Address([0, 1, 2, 3, 4, 5])).await;
+        return;
+    }
 
     let session = bluer::Session::new().await.unwrap();
     let adapter_names = session.adapter_names().await.unwrap();
@@ -112,17 +141,21 @@ pub async fn watch_device(device: Device) -> bluer::Result<()> {
 }
 
 pub async fn handle_measurement(meas: Measurement, addr: Address) {
-    let now = time::OffsetDateTime::now_local().unwrap_or_else(|_|{
-        time::OffsetDateTime::now_utc()
-    });
-
-    let meas = MeasurementRequest {
-        measurement: meas,
-        timestamp: now,
-        sensor_address: addr.0
-    };
+    let meas = InfluxDBMeasurement::new_now(&meas, &addr.0);
 
     let json = serde_json::to_string_pretty(&meas).unwrap_or("error".to_string());
 
     info!("Cool new measurement: {}", json);
+
+    let client = Client::new("https://influxdb.pyrite.io", "soil_sensors")
+        .with_token("oPpVK9r31dpjEGuDBefoTw14oLIyhgXChpzoPZ1hEa3oCYzr6NTVD0K19QpkSDx5VYAVsHBN5_5VRCrD__19mg==");
+
+    let query = meas.into_query("soil_moisture");
+    let result = client.query(query).await;
+
+    match result {
+        Ok(msg) => info!("InfluxDB Result: {}", msg),
+        Err(e) => warn!("InfluxDB Error: {}", e)
+    }
+
 }
