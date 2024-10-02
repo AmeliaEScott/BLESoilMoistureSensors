@@ -101,7 +101,7 @@ mod app {
         }
     }
 
-    #[task(binds = SAADC, shared = [peripherals], local = [])]
+    #[task(binds = SAADC, shared = [peripherals])]
     fn adc_callback(mut cx: adc_callback::Context)
     {
         trace!("[adc_callback] ADC Interrupt");

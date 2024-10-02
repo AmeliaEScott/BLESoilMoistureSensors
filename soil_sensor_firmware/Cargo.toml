@@ -23,7 +23,7 @@ num-traits = { version = "0.2.14", default-features = false, features=["libm"] }
 
 nrf-softdevice = { git = "https://github.com/embassy-rs/nrf-softdevice.git", features = [
 #nrf-softdevice = { path = "../../nrf-softdevice/nrf-softdevice", features = [
-    "nightly", "defmt", "nrf52810", "s112", "ble-peripheral", "ble-gatt-server", "ble-gatt-server",
+    "defmt", "nrf52810", "s112", "ble-peripheral", "ble-gatt-server", "ble-gatt-server",
     "critical-section-impl", "usable-from-interrupts"
 ]}
 
