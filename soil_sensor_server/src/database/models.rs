@@ -1,14 +1,16 @@
+use std::rc::Rc;
+
+use crate::database::schema::{measurements, sensors};
 use diesel::prelude::*;
 use time::OffsetDateTime;
-use crate::database::schema::{measurements, sensors};
 
-#[derive(Queryable, Selectable, Debug)]
+#[derive(Queryable, Selectable, Identifiable, Debug)]
 #[diesel(table_name = sensors)]
 pub struct Sensor {
     pub id: i32,
     pub display_id: Option<i32>,
     pub hardware_address: [u8; 6],
-    pub description: Option<String>
+    pub description: Option<String>,
 }
 
 #[derive(Insertable, Debug)]
@@ -16,7 +18,7 @@ pub struct Sensor {
 pub struct NewSensor {
     pub display_id: Option<i32>,
     pub hardware_address: [u8; 6],
-    pub description: Option<String>
+    pub description: Option<String>,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Associations, Debug)]
@@ -30,7 +32,7 @@ pub struct Measurement {
     pub moisture: i32,
     pub temperature: f64,
     pub capacitor_voltage: f64,
-    pub time: OffsetDateTime
+    pub time: OffsetDateTime,
 }
 
 #[derive(Insertable, Debug)]
@@ -42,6 +44,18 @@ pub struct NewMeasurement {
     pub moisture: i32,
     pub temperature: f64,
     pub capacitor_voltage: f64,
-    pub time: OffsetDateTime
+    pub time: OffsetDateTime,
 }
 
+impl NewMeasurement {
+    pub fn from(request: &soil_sensor_common::web::Request, sensor: &Sensor) -> Self {
+        Self {
+            sensor_id: sensor.id,
+            sequence: request.measurement.sequence as i32,
+            moisture: request.measurement.moisture_frequency as i32,
+            temperature: request.measurement.temperature as f64 * 0.25f64,
+            capacitor_voltage: request.measurement.capacitor_voltage as f64, // TODO: Proper conversion to voltage
+            time: request.timestamp
+        }
+    }
+}

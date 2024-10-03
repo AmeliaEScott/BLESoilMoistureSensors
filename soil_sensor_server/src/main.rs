@@ -1,15 +1,15 @@
-
 pub mod database;
 
+use crate::database::models::{Measurement, NewMeasurement, NewSensor, Sensor};
+use crate::database::schema::measurements::dsl::measurements;
+use diesel::insert_into;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
+use diesel::sql_types::Timestamptz;
+use diesel_async::{AsyncConnection, AsyncPgConnection};
 use dotenvy::dotenv;
 use std::env;
-use diesel::insert_into;
-use diesel::sql_types::Timestamptz;
 use time::OffsetDateTime;
-use crate::database::models::{Sensor, NewSensor, Measurement, NewMeasurement};
-use crate::database::schema::measurements::dsl::measurements;
 
 pub fn establish_connection() -> PgConnection {
     dotenv().ok();
@@ -19,50 +19,36 @@ pub fn establish_connection() -> PgConnection {
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }
 
-fn main() {
-    use self::database::schema::{sensors, measurements};
-    use self::database::models::Sensor;
+pub async fn establish_async_connection() -> AsyncPgConnection {
+    dotenv().ok();
 
-    let connection = &mut establish_connection();
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    AsyncPgConnection::establish(&database_url)
+        .await
+        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
+}
 
-    let sensor_result = sensors::table
-        .filter(sensors::id.eq(4))
-        .select(Sensor::as_select())
-        .get_result(connection);
+#[tokio::main]
+async fn main() {
+    let mut conn = establish_async_connection().await;
 
-    let sensor = match sensor_result {
-        Ok(sensor) => sensor,
-        Err(_) => {
-            let new_sensor = NewSensor {
-                display_id: Some(0x1234),
-                hardware_address: [0, 1, 2, 3, 4, 5],
-                description: Some("Test sensor".to_string())
-            };
+    let sensors = self::database::get_all_sensors(&mut conn).await.unwrap();
 
-            diesel::insert_into(sensors::table)
-                .values(&new_sensor)
-                .returning(Sensor::as_returning())
-                .get_result(connection)
-                .expect("Error creating new sensor")
+    println!("All sensors: {:?}", sensors);
+
+    let new_measurement_request = soil_sensor_common::web::Request {
+        timestamp: OffsetDateTime::now_utc(),
+        sensor_address: [0, 1, 2, 3, 4, 5],
+        measurement: soil_sensor_common::Measurement { 
+            id: 4660, 
+            moisture_frequency: 1234, 
+            temperature: 5678, 
+            capacitor_voltage: 9101, 
+            sequence: 1314 
         }
     };
 
-    println!("Sensor: {:?}", sensor);
+    let new_measurement_result = self::database::add_measurement(&new_measurement_request, &mut conn).await;
 
-    let new_measurement = NewMeasurement {
-        sensor_id: sensor.id,
-        sequence: 0,
-        moisture: 1234,
-        temperature: 56.78,
-        capacitor_voltage: 910.1112,
-        time: OffsetDateTime::now_utc()
-    };
-
-    let measurement = insert_into(measurements)
-        .values(&new_measurement)
-        .returning(Measurement::as_returning())
-        .get_result(connection)
-        .expect("Error inserting new measurement");
-
-    println!("Measurement: {:?}", measurement);
+    println!("New measurement result: {:?}", new_measurement_result);
 }
